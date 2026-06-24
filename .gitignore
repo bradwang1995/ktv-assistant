@@ -1,0 +1,11 @@
+node_modules/
+dist/
+.npm-cache/
+.wrangler/
+.dev.vars
+*.local
+coverage/
+playwright-report/
+test-results/
+dev-server.log
+dev-server.err

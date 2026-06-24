@@ -1,0 +1,37 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: light;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+html,
+body,
+#root {
+  min-height: 100%;
+}
+
+body {
+  margin: 0;
+  background: #f8fafc;
+}
+
+button,
+input {
+  font: inherit;
+}
+
+iframe {
+  border: 0;
+}
+
+.scrollbar-soft {
+  scrollbar-color: #cbd5e1 transparent;
+  scrollbar-width: thin;
+}
+
