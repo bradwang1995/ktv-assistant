@@ -2,6 +2,7 @@ export interface Env {
   DB?: D1Database;
   SEARCH_CACHE?: KVNamespace;
   ROOM_OBJECT?: DurableObjectNamespace;
+  YOUTUBE_API_KEY?: string;
 }
 
 export interface RoomRow {
@@ -34,4 +35,3 @@ export interface PlaybackStateRow {
   started_at: string | null;
   updated_at: string;
 }
-

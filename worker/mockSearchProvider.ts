@@ -1,6 +1,5 @@
-import type { SearchResponse, VideoSearchResult } from "../types/youtube";
-import { normalizeQuery } from "./queryNormalize";
-import { youtubeThumbnailUrl } from "./youtube";
+import type { SearchResponse, VideoSearchResult } from "../src/types/youtube";
+import { normalizeQuery, normalizeSearchQuery } from "../src/lib/queryNormalize";
 
 const MOCK_VIDEO_IDS = [
   "dQw4w9WgXcQ",
@@ -18,22 +17,17 @@ const TITLE_PATTERNS = [
   "{query} karaoke 练唱版",
 ];
 
-export async function searchMockVideos(
-  query: string,
-  limit = 4,
-): Promise<SearchResponse> {
+export function searchMockVideos(query: string, limit = 4): SearchResponse {
   const normalizedQuery = normalizeQuery(query);
 
   if (!normalizedQuery) {
     return {
       query,
       normalizedQuery,
-      cached: true,
+      cached: false,
       results: [],
     };
   }
-
-  await new Promise((resolve) => window.setTimeout(resolve, 350));
 
   const results: VideoSearchResult[] = TITLE_PATTERNS.slice(0, limit).map(
     (pattern, index) => {
@@ -44,8 +38,9 @@ export async function searchMockVideos(
         channelTitle: ["KTV 点唱频道", "华语伴奏精选", "朋友练歌房", "Karaoke Studio"][
           index
         ],
-        thumbnailUrl: youtubeThumbnailUrl(videoId),
+        thumbnailUrl: `https://img.youtube.com/vi/${videoId}/hqdefault.jpg`,
         durationSeconds: [265, 241, 304, 278][index],
+        publishedAt: "2026-01-01T00:00:00Z",
         score: 32 - index * 3,
         reasons: ["mock result", "title contains KTV", "starts near 30 seconds"],
       };
@@ -54,8 +49,9 @@ export async function searchMockVideos(
 
   return {
     query,
-    normalizedQuery: `${normalizedQuery} ktv`,
-    cached: true,
+    normalizedQuery: normalizeSearchQuery(query),
+    cached: false,
     results,
   };
 }
+

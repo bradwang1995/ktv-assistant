@@ -2,6 +2,7 @@ import type { CreateRoomResponse } from "../src/types/api";
 import { createRoomInD1, getRoomSnapshotFromD1 } from "./d1Repository";
 import { apiError, jsonResponse } from "./json";
 import { createRoomId, isValidRoomId } from "./roomIds";
+import { searchVideos } from "./searchService";
 import type { Env } from "./types";
 
 const CREATE_ROOM_ATTEMPTS = 3;
@@ -36,6 +37,14 @@ export async function handleApiRequest(request: Request, env: Env) {
     }
 
     return connectRoomWebSocket(request, env, route.roomId);
+  }
+
+  if (route.name === "roomSearch") {
+    if (request.method !== "POST") {
+      return apiError(405, "METHOD_NOT_ALLOWED", "Use POST to search videos.");
+    }
+
+    return searchRoomVideos(request, env, route.roomId);
   }
 
   return apiError(404, "NOT_FOUND", "API route not found.");
@@ -129,6 +138,57 @@ async function connectRoomWebSocket(request: Request, env: Env, roomId: string) 
   return stub.fetch(new Request(url, request));
 }
 
+async function searchRoomVideos(request: Request, env: Env, roomId: string) {
+  if (!isValidRoomId(roomId)) {
+    return apiError(400, "INVALID_ROOM_ID", "Room id must be 8 lowercase letters or numbers.");
+  }
+
+  let body: unknown;
+
+  try {
+    body = await request.json();
+  } catch {
+    return apiError(400, "INVALID_JSON", "Request body must be JSON.");
+  }
+
+  if (!isSearchRequestBody(body)) {
+    return apiError(400, "INVALID_SEARCH_REQUEST", "Search request must include a query string.");
+  }
+
+  const query = body.query.trim();
+
+  if (query.length === 0) {
+    return jsonResponse({
+      query: body.query,
+      normalizedQuery: "",
+      cached: false,
+      results: [],
+    });
+  }
+
+  if (query.length > 100) {
+    return apiError(400, "QUERY_TOO_LONG", "Search query must be 100 characters or fewer.");
+  }
+
+  const limit = clampLimit(body.limit);
+
+  try {
+    return jsonResponse(
+      await searchVideos({
+        query,
+        limit,
+        env,
+      }),
+    );
+  } catch (error) {
+    return apiError(
+      502,
+      "SEARCH_FAILED",
+      error instanceof Error ? error.message : "Search failed.",
+    );
+  }
+}
+
 function matchApiRoute(pathname: string) {
   const parts = pathname.split("/").filter(Boolean);
 
@@ -154,5 +214,31 @@ function matchApiRoute(pathname: string) {
     return { name: "roomWebSocket" as const, roomId: parts[2] };
   }
 
+  if (
+    parts.length === 4 &&
+    parts[0] === "api" &&
+    parts[1] === "rooms" &&
+    parts[3] === "search"
+  ) {
+    return { name: "roomSearch" as const, roomId: parts[2] };
+  }
+
   return null;
+}
+
+function isSearchRequestBody(value: unknown): value is { query: string; limit?: number } {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    "query" in value &&
+    typeof (value as { query?: unknown }).query === "string"
+  );
+}
+
+function clampLimit(limit: number | undefined) {
+  if (typeof limit !== "number" || !Number.isFinite(limit)) {
+    return 4;
+  }
+
+  return Math.min(Math.max(Math.floor(limit), 1), 4);
 }

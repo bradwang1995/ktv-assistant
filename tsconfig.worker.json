@@ -18,6 +18,7 @@
     "functions/**/*.ts",
     "worker/**/*.ts",
     "src/types/**/*.ts",
+    "src/lib/queryNormalize.ts",
     "src/lib/roomReducer.ts"
   ]
 }

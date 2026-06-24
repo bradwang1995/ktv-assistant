@@ -1,5 +1,6 @@
 import type { ApiErrorResponse, CreateRoomResponse } from "../types/api";
 import type { RoomSnapshot } from "../types/room";
+import type { SearchResponse } from "../types/youtube";
 
 export class ApiClientError extends Error {
   status: number;
@@ -34,6 +35,22 @@ export async function fetchRoomSnapshot(roomId: string) {
   return parseJsonResponse<RoomSnapshot>(response);
 }
 
+export async function searchVideosViaApi(roomId: string, query: string, limit = 4) {
+  const response = await fetch(`/api/rooms/${roomId}/search`, {
+    method: "POST",
+    headers: {
+      accept: "application/json",
+      "content-type": "application/json",
+    },
+    body: JSON.stringify({
+      query,
+      limit,
+    }),
+  });
+
+  return parseJsonResponse<SearchResponse>(response);
+}
+
 async function parseJsonResponse<T>(response: Response): Promise<T> {
   const contentType = response.headers.get("content-type") ?? "";
 
@@ -58,4 +75,3 @@ async function parseJsonResponse<T>(response: Response): Promise<T> {
 
   return body as T;
 }
-

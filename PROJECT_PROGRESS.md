@@ -39,7 +39,7 @@ Last updated: 2026-06-24
 - `[~]` 播放器目前使用普通 iframe，不是完整 YouTube IFrame Player API 状态机
 - `[~]` Cloudflare backend 已有 API router、D1 repository、Pages Function 入口和 Room Durable Object Worker 配置
 - `[~]` 已实现 D1 repository 写法，但还没有连真实 Cloudflare D1 资源验证
-- `[ ]` 还没有 KV 搜索缓存
+- `[~]` 已实现 KV 搜索缓存代码路径，等待真实 Cloudflare KV 资源验证
 - `[~]` 已有 WebSocket 房间连接和队列命令路径，但还没有真实 Cloudflare runtime 验证
 
 ## Phase 0 - Project Setup
@@ -165,21 +165,22 @@ Last updated: 2026-06-24
 - `[x]` 前端 mock search flow
 - `[x]` `normalizeQuery`
 - `[x]` `worker/scoring.ts` 初始评分函数
-- `[ ]` `POST /api/rooms/:roomId/search`
-- `[ ]` KV cache lookup
-- `[ ]` YouTube `search.list`
-- `[ ]` 可选 `videos.list` 获取 duration
-- `[ ]` 结果过滤和排序
-- `[ ]` KV cache write
-- `[ ]` 前端从 mock search 切到真实 API
+- `[x]` `POST /api/rooms/:roomId/search`
+- `[x]` KV cache lookup
+- `[x]` YouTube `search.list`
+- `[x]` 可选 `videos.list` 获取 duration
+- `[x]` 结果过滤和排序
+- `[x]` KV cache write
+- `[x]` 前端优先调用 API search，失败时 fallback 到 mock search
 - `[ ]` 搜索失败友好提示
 - `[ ]` quota 保护策略
+- `[ ]` 使用真实 `YOUTUBE_API_KEY` 验证 YouTube result quality
 
 建议实现方式：
 
-1. 先保留 mock provider，做 provider interface。
-2. 再接 Worker search route。
-3. 最后用环境变量 `YOUTUBE_API_KEY` 打开真实 provider。
+1. 先保留 mock provider，做 provider interface。已完成。
+2. 再接 Worker search route。已完成。
+3. 最后用环境变量 `YOUTUBE_API_KEY` 打开真实 provider。代码已完成，等待手动配置 secret 和真实验证。
 
 ## Phase 5 - YouTube Preview Players
 
@@ -302,12 +303,14 @@ Goal: real-time queue operations move from local storage to backend source of tr
 
 Goal: replace mock search with backend search provider while keeping mock available for local/dev.
 
-- `[ ]` Define search provider interface
-- `[ ]` Keep mock provider for dev/test
-- `[ ]` Implement YouTube provider
-- `[ ]` Implement KV cache
-- `[ ]` Add scoring/ranking tests
-- `[ ]` Switch frontend to API search
+- `[x]` Define search provider interface
+- `[x]` Keep mock provider for dev/test
+- `[x]` Implement YouTube provider
+- `[x]` Implement KV cache
+- `[x]` Add scoring/ranking tests
+- `[x]` Switch frontend to API search with mock fallback
+- `[ ]` Configure `YOUTUBE_API_KEY` secret in Cloudflare Pages
+- `[ ]` Runtime-test search with real YouTube Data API
 
 ### Iteration 5 - Player API
 

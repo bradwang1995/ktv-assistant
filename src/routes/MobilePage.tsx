@@ -12,6 +12,7 @@ import { FormEvent, useMemo, useState } from "react";
 import type { ReactNode } from "react";
 import { useParams } from "react-router-dom";
 import { useRoomSocket } from "../hooks/useRoomSocket";
+import { searchVideosViaApi } from "../lib/apiClient";
 import { getCurrentItem, getQueuedItems } from "../lib/roomReducer";
 import { addSongToRoom, promoteSong, removeSong, useRoomSnapshot } from "../lib/roomState";
 import { searchMockVideos } from "../lib/mockSearch";
@@ -120,7 +121,13 @@ function SearchTab({
   const setActiveTab = useMobileUiStore((state) => state.setActiveTab);
 
   const searchMutation = useMutation({
-    mutationFn: (nextQuery: string) => searchMockVideos(nextQuery, 4),
+    mutationFn: async (nextQuery: string) => {
+      try {
+        return await searchVideosViaApi(roomId, nextQuery, 4);
+      } catch {
+        return searchMockVideos(nextQuery, 4);
+      }
+    },
     onSuccess: (response) => {
       setSelected(response.results[0] ?? null);
     },

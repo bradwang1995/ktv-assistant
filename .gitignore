@@ -3,6 +3,9 @@ dist/
 .npm-cache/
 .wrangler/
 .dev.vars
+.dev.vars*
+.env
+.env.*
 *.local
 coverage/
 playwright-report/

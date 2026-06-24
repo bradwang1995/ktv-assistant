@@ -354,18 +354,59 @@ ws.send(JSON.stringify({
 
 ## Step 9 - 后续接 YouTube API key
 
-这一项不是当前 step 必须做。等我们实现真实 YouTube search provider 后，你需要：
+代码现在已经支持真实 YouTube search provider。没有 `YOUTUBE_API_KEY` 时，后端会返回 mock search 结果，方便继续开发；配置 secret 后才会调用 YouTube Data API。
+
+你需要：
 
 1. 去 Google Cloud 创建或选择项目。
 2. 启用 YouTube Data API v3。
 3. 创建 API key。
-4. 在 Cloudflare Worker/Pages 里设置 secret：
+4. 在 Cloudflare Pages project 里设置 encrypted secret：
 
-```bash
-npx wrangler secret put YOUTUBE_API_KEY
+Cloudflare Dashboard:
+
+```txt
+Workers & Pages -> 你的 Pages project -> Settings -> Variables and Secrets -> Add
 ```
 
-如果 secret 需要同时给 Room Worker 和 Pages Functions 使用，我们到时候会按实际代码路径分别设置。
+变量名：
+
+```txt
+YOUTUBE_API_KEY
+```
+
+选择 Encrypt，然后保存。
+
+如果你后续也想直接访问 `ktv-assistant-room` Worker 的 search route，可以给 Room Worker 也设置同名 secret：
+
+```bash
+npx wrangler secret put YOUTUBE_API_KEY --config wrangler.room.toml
+```
+
+不要把 API key 写进源码、README、`.env`、`.dev.vars` 或 wrangler toml 并 commit。
+
+## Step 9.5 - 验证搜索 API
+
+如果还没有设置 `YOUTUBE_API_KEY`，这个 API 也会返回 mock 结果：
+
+```bash
+curl -X POST https://<your-project>.pages.dev/api/rooms/<roomId>/search \
+  -H "content-type: application/json" \
+  -d "{\"query\":\"后来\",\"limit\":4}"
+```
+
+期望看到：
+
+```json
+{
+  "query": "后来",
+  "normalizedQuery": "后来 ktv",
+  "cached": false,
+  "results": []
+}
+```
+
+真实返回里 `results` 应该有 0 到 4 个视频。设置 `YOUTUBE_API_KEY` 后再执行同一个请求，应该返回真实 YouTube 搜索结果。重复同一个搜索时，如果 KV 已配置，`cached` 应该可能变成 `true`。
 
 ## Step 10 - 手动验收 checklist
 
@@ -388,6 +429,9 @@ npx wrangler secret put YOUTUBE_API_KEY
 - `[ ]` WebSocket `PROMOTE_QUEUE_ITEM` 返回 `ROOM_UPDATED`
 - `[ ]` WebSocket `REMOVE_QUEUE_ITEM` 返回 `ROOM_UPDATED`
 - `[ ]` WebSocket `PLAYER_ENDED` 能切到下一首或回到 idle
+- `[ ]` `POST /api/rooms/:roomId/search` 返回 JSON
+- `[ ]` 设置 `YOUTUBE_API_KEY` 后 search 返回真实 YouTube results
+- `[ ]` 重复搜索时 KV cache 可命中
 - `[ ]` `/create` 创建房间后能进入 display 页面
 
 ## 当前不要手动改的东西
