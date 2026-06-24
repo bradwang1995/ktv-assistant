@@ -9,7 +9,7 @@ import { youtubeEmbedUrl } from "../lib/youtube";
 
 export default function DisplayPage() {
   const { roomId = "" } = useParams();
-  useRoomSocket({ roomId, role: "display" });
+  const roomSocket = useRoomSocket({ roomId, role: "display" });
   const snapshot = useRoomSnapshot(roomId);
   const currentItem = getCurrentItem(snapshot);
   const queuedItems = getQueuedItems(snapshot);
@@ -23,13 +23,33 @@ export default function DisplayPage() {
   const handleStart = () => {
     if (!currentItem) return;
     setHasStarted(true);
-    playerStarted(roomId, currentItem.id, currentItem.videoId);
+    if (roomSocket.status === "connected") {
+      roomSocket.send({
+        type: "PLAYER_STARTED",
+        payload: {
+          queueItemId: currentItem.id,
+          videoId: currentItem.videoId,
+        },
+      });
+    } else {
+      playerStarted(roomId, currentItem.id, currentItem.videoId);
+    }
   };
 
   const handleNext = () => {
     if (!currentItem) return;
     setHasStarted(false);
-    playerEnded(roomId, currentItem.id, currentItem.videoId);
+    if (roomSocket.status === "connected") {
+      roomSocket.send({
+        type: "PLAYER_ENDED",
+        payload: {
+          queueItemId: currentItem.id,
+          videoId: currentItem.videoId,
+        },
+      });
+    } else {
+      playerEnded(roomId, currentItem.id, currentItem.videoId);
+    }
   };
 
   return (

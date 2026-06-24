@@ -37,16 +37,29 @@ function isClientMessage(value: unknown): value is ClientToServerMessage {
     );
   }
 
-  if (
-    message.type === "ADD_QUEUE_ITEM" ||
-    message.type === "PROMOTE_QUEUE_ITEM" ||
-    message.type === "REMOVE_QUEUE_ITEM" ||
-    message.type === "PLAYER_STARTED" ||
-    message.type === "PLAYER_ENDED"
-  ) {
-    return typeof message.payload === "object" && message.payload !== null;
+  if (message.type === "ADD_QUEUE_ITEM") {
+    return isObject(message.payload) && hasString(message.payload, "videoId") && hasString(message.payload, "title");
+  }
+
+  if (message.type === "PROMOTE_QUEUE_ITEM" || message.type === "REMOVE_QUEUE_ITEM") {
+    return isObject(message.payload) && hasString(message.payload, "queueItemId");
+  }
+
+  if (message.type === "PLAYER_STARTED" || message.type === "PLAYER_ENDED") {
+    return (
+      isObject(message.payload) &&
+      hasString(message.payload, "queueItemId") &&
+      hasString(message.payload, "videoId")
+    );
   }
 
   return false;
 }
 
+function isObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
+
+function hasString(value: Record<string, unknown>, key: string) {
+  return typeof value[key] === "string" && value[key].length > 0;
+}

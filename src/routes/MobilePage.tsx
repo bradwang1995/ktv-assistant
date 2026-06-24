@@ -18,11 +18,12 @@ import { searchMockVideos } from "../lib/mockSearch";
 import { youtubeEmbedUrl } from "../lib/youtube";
 import { useMobileUiStore } from "../stores/mobileUiStore";
 import type { QueueItem } from "../types/room";
+import type { ClientToServerMessage } from "../types/websocket";
 import type { VideoSearchResult } from "../types/youtube";
 
 export default function MobilePage() {
   const { roomId = "" } = useParams();
-  useRoomSocket({ roomId, role: "mobile" });
+  const roomSocket = useRoomSocket({ roomId, role: "mobile" });
   const snapshot = useRoomSnapshot(roomId);
   const currentItem = getCurrentItem(snapshot);
   const queuedItems = getQueuedItems(snapshot);
@@ -61,12 +62,18 @@ export default function MobilePage() {
         </header>
 
         {activeTab === "search" ? (
-          <SearchTab roomId={roomId} />
+          <SearchTab
+            roomId={roomId}
+            isSocketConnected={roomSocket.status === "connected"}
+            sendRoomMessage={roomSocket.send}
+          />
         ) : (
           <QueueTab
             roomId={roomId}
             currentItem={currentItem}
             queuedItems={queuedItems}
+            isSocketConnected={roomSocket.status === "connected"}
+            sendRoomMessage={roomSocket.send}
           />
         )}
       </div>
@@ -99,7 +106,15 @@ function TabButton({
   );
 }
 
-function SearchTab({ roomId }: { roomId: string }) {
+function SearchTab({
+  roomId,
+  isSocketConnected,
+  sendRoomMessage,
+}: {
+  roomId: string;
+  isSocketConnected: boolean;
+  sendRoomMessage: (message: ClientToServerMessage) => void;
+}) {
   const [query, setQuery] = useState("");
   const [selected, setSelected] = useState<VideoSearchResult | null>(null);
   const setActiveTab = useMobileUiStore((state) => state.setActiveTab);
@@ -119,12 +134,22 @@ function SearchTab({ roomId }: { roomId: string }) {
   const addSelectedSong = () => {
     if (!selected) return;
 
-    addSongToRoom(roomId, {
+    const payload = {
       videoId: selected.videoId,
       title: selected.title,
       channelTitle: selected.channelTitle,
       thumbnailUrl: selected.thumbnailUrl,
-    });
+    };
+
+    if (isSocketConnected) {
+      sendRoomMessage({
+        type: "ADD_QUEUE_ITEM",
+        payload,
+      });
+    } else {
+      addSongToRoom(roomId, payload);
+    }
+
     setActiveTab("queue");
   };
 
@@ -252,10 +277,14 @@ function QueueTab({
   roomId,
   currentItem,
   queuedItems,
+  isSocketConnected,
+  sendRoomMessage,
 }: {
   roomId: string;
   currentItem: QueueItem | null;
   queuedItems: QueueItem[];
+  isSocketConnected: boolean;
+  sendRoomMessage: (message: ClientToServerMessage) => void;
 }) {
   const [confirmAction, setConfirmAction] = useState<
     | { type: "promote"; item: QueueItem }
@@ -274,9 +303,27 @@ function QueueTab({
     if (!confirmAction) return;
 
     if (confirmAction.type === "promote") {
-      promoteSong(roomId, confirmAction.item.id);
+      if (isSocketConnected) {
+        sendRoomMessage({
+          type: "PROMOTE_QUEUE_ITEM",
+          payload: {
+            queueItemId: confirmAction.item.id,
+          },
+        });
+      } else {
+        promoteSong(roomId, confirmAction.item.id);
+      }
     } else {
-      removeSong(roomId, confirmAction.item.id);
+      if (isSocketConnected) {
+        sendRoomMessage({
+          type: "REMOVE_QUEUE_ITEM",
+          payload: {
+            queueItemId: confirmAction.item.id,
+          },
+        });
+      } else {
+        removeSong(roomId, confirmAction.item.id);
+      }
     }
 
     setConfirmAction(null);

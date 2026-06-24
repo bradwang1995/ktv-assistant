@@ -120,6 +120,103 @@ export async function getRoomSnapshotFromD1(
   };
 }
 
+export async function saveRoomSnapshotToD1(db: D1Database, snapshot: RoomSnapshot) {
+  await db
+    .prepare(
+      `
+      UPDATE rooms
+      SET
+        display_name = ?,
+        updated_at = ?,
+        is_active = ?
+      WHERE id = ?
+      `,
+    )
+    .bind(
+      snapshot.room.displayName ?? null,
+      snapshot.room.updatedAt,
+      snapshot.room.isActive ? 1 : 0,
+      snapshot.room.id,
+    )
+    .run();
+
+  await db
+    .prepare(
+      `
+      INSERT INTO playback_states (
+        room_id,
+        current_queue_item_id,
+        current_video_id,
+        player_state,
+        started_at,
+        updated_at
+      )
+      VALUES (?, ?, ?, ?, ?, ?)
+      ON CONFLICT(room_id) DO UPDATE SET
+        current_queue_item_id = excluded.current_queue_item_id,
+        current_video_id = excluded.current_video_id,
+        player_state = excluded.player_state,
+        started_at = excluded.started_at,
+        updated_at = excluded.updated_at
+      `,
+    )
+    .bind(
+      snapshot.playback.roomId,
+      snapshot.playback.currentQueueItemId,
+      snapshot.playback.currentVideoId,
+      snapshot.playback.playerState,
+      snapshot.playback.startedAt ?? null,
+      snapshot.playback.updatedAt,
+    )
+    .run();
+
+  for (const item of snapshot.queue) {
+    await db
+      .prepare(
+        `
+        INSERT INTO queue_items (
+          id,
+          room_id,
+          video_id,
+          title,
+          channel_title,
+          thumbnail_url,
+          requested_by,
+          status,
+          sort_key,
+          created_at,
+          updated_at
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(id) DO UPDATE SET
+          room_id = excluded.room_id,
+          video_id = excluded.video_id,
+          title = excluded.title,
+          channel_title = excluded.channel_title,
+          thumbnail_url = excluded.thumbnail_url,
+          requested_by = excluded.requested_by,
+          status = excluded.status,
+          sort_key = excluded.sort_key,
+          updated_at = excluded.updated_at
+        `,
+      )
+      .bind(
+        item.id,
+        item.roomId,
+        item.videoId,
+        item.title,
+        item.channelTitle ?? null,
+        item.thumbnailUrl ?? null,
+        item.requestedBy ?? null,
+        item.status,
+        item.sortKey,
+        item.createdAt,
+        item.updatedAt,
+      )
+      .run();
+  }
+}
+
 function toQueueItem(row: QueueItemRow): QueueItem {
   return {
     id: row.id,
@@ -165,4 +262,3 @@ function toPlayerState(
 
   return "idle";
 }
-

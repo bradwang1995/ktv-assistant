@@ -1,7 +1,8 @@
 import type { RoomSnapshot } from "../src/types/room";
 import type { ClientRole } from "../src/types/websocket";
-import { getRoomSnapshotFromD1 } from "./d1Repository";
+import { getRoomSnapshotFromD1, saveRoomSnapshotToD1 } from "./d1Repository";
 import { apiError, jsonResponse } from "./json";
+import { applyRoomCommand, type RoomCommandMessage } from "./roomCommands";
 import { isValidRoomId } from "./roomIds";
 import type { Env } from "./types";
 import { decodeClientMessage, encodeServerMessage } from "./websocketMessages";
@@ -136,11 +137,11 @@ export class RoomDurableObject {
         return;
       }
 
-      this.sendError(
-        socket,
-        "NOT_IMPLEMENTED",
-        `${message.type} is not implemented in this backend iteration.`,
+      const nextSnapshot = await this.applyAndPersistCommand(
+        roomId,
+        message as RoomCommandMessage,
       );
+      this.broadcastSnapshot(nextSnapshot);
     } catch (error) {
       this.sendError(
         socket,
@@ -172,6 +173,22 @@ export class RoomDurableObject {
       ...snapshot,
       connectedClients,
     };
+  }
+
+  private async applyAndPersistCommand(roomId: string, message: RoomCommandMessage) {
+    if (!this.env.DB) {
+      throw new Error("D1 binding DB is not configured.");
+    }
+
+    const currentSnapshot = await this.getSnapshot(roomId);
+    const nextSnapshot = {
+      ...applyRoomCommand(currentSnapshot, message),
+      connectedClients: this.sockets.size,
+    };
+
+    await saveRoomSnapshotToD1(this.env.DB, nextSnapshot);
+
+    return nextSnapshot;
   }
 
   private sendSnapshot(socket: WebSocket, snapshot: RoomSnapshot) {

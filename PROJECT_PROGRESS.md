@@ -40,7 +40,7 @@ Last updated: 2026-06-24
 - `[~]` Cloudflare backend 已有 API router、D1 repository、Pages Function 入口和 Room Durable Object Worker 配置
 - `[~]` 已实现 D1 repository 写法，但还没有连真实 Cloudflare D1 资源验证
 - `[ ]` 还没有 KV 搜索缓存
-- `[~]` 已有 WebSocket 房间连接基础，但还没有队列操作走 WebSocket
+- `[~]` 已有 WebSocket 房间连接和队列命令路径，但还没有真实 Cloudflare runtime 验证
 
 ## Phase 0 - Project Setup
 
@@ -140,12 +140,12 @@ Last updated: 2026-06-24
 - `[x]` WebSocket `JOIN_ROOM`
 - `[x]` WebSocket `ROOM_SNAPSHOT`
 - `[x]` WebSocket `ROOM_UPDATED` for connected-client snapshot broadcasts
-- `[ ]` Durable Object `ADD_QUEUE_ITEM`
-- `[ ]` Durable Object `PROMOTE_QUEUE_ITEM`
-- `[ ]` Durable Object `REMOVE_QUEUE_ITEM`
-- `[ ]` Durable Object `PLAYER_STARTED`
-- `[ ]` Durable Object `PLAYER_ENDED`
-- `[ ]` D1 持久化 queue changes
+- `[x]` Durable Object `ADD_QUEUE_ITEM`
+- `[x]` Durable Object `PROMOTE_QUEUE_ITEM`
+- `[x]` Durable Object `REMOVE_QUEUE_ITEM`
+- `[x]` Durable Object `PLAYER_STARTED`
+- `[x]` Durable Object `PLAYER_ENDED`
+- `[~]` D1 持久化 queue changes 已实现，等待真实 Cloudflare 资源验证
 - `[ ]` Durable Object restart 后从 D1 恢复
 - `[ ]` 两个手机页面实时同步验证
 - `[ ]` 大屏和手机页面实时同步验证
@@ -248,7 +248,8 @@ Last updated: 2026-06-24
 - `[x]` Production dependency audit: `npm audit --omit=dev`
 - `[ ]` Worker route tests
 - `[ ]` Durable Object integration tests
-- `[~]` WebSocket message unit tests
+- `[x]` WebSocket message unit tests
+- `[x]` Room command unit tests
 - `[ ]` WebSocket runtime integration tests
 - `[ ]` Playwright E2E test
 - `[ ]` Manual QR scan test on phone
@@ -286,12 +287,16 @@ Goal: display and mobile can connect to the same room Durable Object.
 
 Goal: real-time queue operations move from local storage to backend source of truth.
 
-- `[ ]` Implement `ADD_QUEUE_ITEM`
-- `[ ]` Implement `PROMOTE_QUEUE_ITEM`
-- `[ ]` Implement `REMOVE_QUEUE_ITEM`
-- `[ ]` Broadcast `ROOM_UPDATED`
-- `[ ]` Persist queue operations to D1
-- `[ ]` Frontend uses WebSocket commands
+- `[x]` Implement `ADD_QUEUE_ITEM`
+- `[x]` Implement `PROMOTE_QUEUE_ITEM`
+- `[x]` Implement `REMOVE_QUEUE_ITEM`
+- `[x]` Implement `PLAYER_STARTED`
+- `[x]` Implement `PLAYER_ENDED`
+- `[x]` Broadcast `ROOM_UPDATED`
+- `[x]` Persist queue operations to D1 in code
+- `[x]` Frontend uses WebSocket commands when connected
+- `[x]` Frontend keeps local fallback when WebSocket is unavailable
+- `[ ]` Verify persistence and broadcasts against real/local Wrangler bindings
 
 ### Iteration 4 - Search API
 

@@ -274,6 +274,84 @@ npx wscat -c wss://<your-project>.pages.dev/api/rooms/<roomId>/ws
 {"type":"PING"}
 ```
 
+## Step 8.6 - 验证 WebSocket 队列操作
+
+这一项同样需要真实 Cloudflare Pages + Room Worker + D1 资源。
+
+先用 Step 8.5 的方法打开 WebSocket，并完成 `JOIN_ROOM`。你应该已经能看到 `ROOM_SNAPSHOT`。
+
+添加第一首歌：
+
+```js
+ws.send(JSON.stringify({
+  type: "ADD_QUEUE_ITEM",
+  payload: {
+    videoId: "dQw4w9WgXcQ",
+    title: "测试歌曲 1 KTV",
+    channelTitle: "Manual Test"
+  }
+}));
+```
+
+期望看到 `ROOM_UPDATED`，其中：
+
+- `playback.currentVideoId` 是 `dQw4w9WgXcQ`
+- 第一首歌的 `status` 是 `playing`
+
+添加第二首歌：
+
+```js
+ws.send(JSON.stringify({
+  type: "ADD_QUEUE_ITEM",
+  payload: {
+    videoId: "kJQP7kiw5Fk",
+    title: "测试歌曲 2 KTV",
+    channelTitle: "Manual Test"
+  }
+}));
+```
+
+期望看到 `ROOM_UPDATED`，其中第二首歌在 `queue` 里是 `queued`，当前播放仍然是第一首。
+
+置顶第二首歌：
+
+```js
+const latest = JSON.parse("<paste latest ROOM_UPDATED json here>");
+const queued = latest.payload.queue.find((item) => item.status === "queued");
+ws.send(JSON.stringify({
+  type: "PROMOTE_QUEUE_ITEM",
+  payload: {
+    queueItemId: queued.id
+  }
+}));
+```
+
+删除一首 queued 歌：
+
+```js
+ws.send(JSON.stringify({
+  type: "REMOVE_QUEUE_ITEM",
+  payload: {
+    queueItemId: queued.id
+  }
+}));
+```
+
+模拟当前歌曲结束：
+
+```js
+const current = latest.payload.queue.find((item) => item.status === "playing");
+ws.send(JSON.stringify({
+  type: "PLAYER_ENDED",
+  payload: {
+    queueItemId: current.id,
+    videoId: current.videoId
+  }
+}));
+```
+
+期望看到下一首 queued 歌变成 `playing`。如果队列空了，`playback.playerState` 应回到 `idle`。
+
 ## Step 9 - 后续接 YouTube API key
 
 这一项不是当前 step 必须做。等我们实现真实 YouTube search provider 后，你需要：
@@ -306,6 +384,10 @@ npx wrangler secret put YOUTUBE_API_KEY
 - `[ ]` `GET /api/rooms/:roomId/ws` 可以 WebSocket 连接
 - `[ ]` WebSocket `JOIN_ROOM` 返回 `ROOM_SNAPSHOT`
 - `[ ]` WebSocket `PING` 返回 `PONG`
+- `[ ]` WebSocket `ADD_QUEUE_ITEM` 返回 `ROOM_UPDATED`
+- `[ ]` WebSocket `PROMOTE_QUEUE_ITEM` 返回 `ROOM_UPDATED`
+- `[ ]` WebSocket `REMOVE_QUEUE_ITEM` 返回 `ROOM_UPDATED`
+- `[ ]` WebSocket `PLAYER_ENDED` 能切到下一首或回到 idle
 - `[ ]` `/create` 创建房间后能进入 display 页面
 
 ## 当前不要手动改的东西
