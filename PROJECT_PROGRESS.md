@@ -36,7 +36,7 @@ Last updated: 2026-06-25
 
 - `[~]` 实时同步目前是本地浏览器同步，不是 Cloudflare Durable Object
 - `[x]` 搜索后端已接真实 YouTube Data API，前端仍保留 mock fallback
-- `[~]` 播放器目前使用普通 iframe，不是完整 YouTube IFrame Player API 状态机
+- `[~]` 大屏播放器已接入 YouTube IFrame Player API 状态机；移动端预览仍使用普通 iframe
 - `[x]` Cloudflare backend 已有 API router、D1 repository、Worker 入口和 Room Durable Object Worker 配置
 - `[x]` 已实现 D1 repository 写法，并通过真实 Cloudflare D1 remote API 验证
 - `[x]` KV namespace `SEARCH_CACHE` 已创建并完成 Worker 绑定验证
@@ -216,15 +216,15 @@ Last updated: 2026-06-25
 
 - `[x]` 大屏显示当前歌曲
 - `[x]` 没有歌曲时显示「当前没有视频播放」
-- `[x]` 大屏 iframe 播放当前视频
+- `[x]` 大屏 YouTube IFrame Player API 播放当前视频
 - `[x]` 手动「开始 K 歌」
 - `[x]` 手动「下一首」
-- `[ ]` YouTube IFrame Player API loader
-- `[ ]` 监听 `onStateChange`
-- `[ ]` 自动发送 `PLAYER_STARTED`
-- `[ ]` 自动发送 `PLAYER_ENDED`
-- `[ ]` 自动切下一首并播放
-- `[ ]` 播放失败兜底 UI
+- `[x]` YouTube IFrame Player API loader
+- `[x]` 监听 `onStateChange`
+- `[x]` 自动发送 `PLAYER_STARTED`
+- `[x]` 自动发送 `PLAYER_ENDED`
+- `[x]` 自动切下一首并播放
+- `[x]` 播放失败兜底 UI
 - `[ ]` 浏览器 autoplay 限制下的真实设备测试
 
 ## Phase 7 - Polish and Reliability
@@ -329,12 +329,12 @@ Goal: replace mock search with backend search provider while keeping mock availa
 
 Goal: display page detects playback events and advances automatically.
 
-- `[ ]` Add YouTube IFrame API loader
-- `[ ]` Build `FullscreenPlayer` component
-- `[ ]` Send `PLAYER_STARTED`
-- `[ ]` Send `PLAYER_ENDED`
-- `[ ]` Handle player errors
-- `[ ]` Test auto-advance
+- `[x]` Add YouTube IFrame API loader
+- `[x]` Build `FullscreenPlayer` component
+- `[x]` Send `PLAYER_STARTED`
+- `[x]` Send `PLAYER_ENDED`
+- `[x]` Handle player errors
+- `[~]` Test auto-advance in browser
 
 ### Iteration 6 - Visual QA and party-readiness
 

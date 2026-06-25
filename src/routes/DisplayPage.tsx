@@ -1,11 +1,12 @@
 import { Copy, ExternalLink, MonitorPlay, QrCode, SkipForward } from "lucide-react";
 import { QRCodeSVG } from "qrcode.react";
-import { useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useParams } from "react-router-dom";
+import { FullscreenPlayer } from "../components/FullscreenPlayer";
 import { useRoomSocket } from "../hooks/useRoomSocket";
 import { getCurrentItem, getQueuedItems } from "../lib/roomReducer";
 import { playerEnded, playerStarted, useRoomSnapshot } from "../lib/roomState";
-import { youtubeEmbedUrl } from "../lib/youtube";
+import type { QueueItem } from "../types/room";
 
 export default function DisplayPage() {
   const { roomId = "" } = useParams();
@@ -13,32 +14,100 @@ export default function DisplayPage() {
   const snapshot = useRoomSnapshot(roomId);
   const currentItem = getCurrentItem(snapshot);
   const queuedItems = getQueuedItems(snapshot);
-  const [hasStarted, setHasStarted] = useState(false);
+  const [playRequestId, setPlayRequestId] = useState(0);
+  const [autoAdvanceEnabled, setAutoAdvanceEnabled] = useState(false);
+  const [playerIssue, setPlayerIssue] = useState<string | null>(null);
+  const lastAutoPlayItemIdRef = useRef<string | null>(null);
 
   const mobileUrl = useMemo(() => {
     const path = `/room/${roomId}/mobile`;
     return `${window.location.origin}${path}`;
   }, [roomId]);
 
+  const sendPlayerStarted = useCallback(
+    (item: QueueItem) => {
+      if (roomSocket.status === "connected") {
+        roomSocket.send({
+          type: "PLAYER_STARTED",
+          payload: {
+            queueItemId: item.id,
+            videoId: item.videoId,
+          },
+        });
+      } else {
+        playerStarted(roomId, item.id, item.videoId);
+      }
+    },
+    [roomId, roomSocket],
+  );
+
+  const sendPlayerEnded = useCallback(
+    (item: QueueItem) => {
+      if (roomSocket.status === "connected") {
+        roomSocket.send({
+          type: "PLAYER_ENDED",
+          payload: {
+            queueItemId: item.id,
+            videoId: item.videoId,
+          },
+        });
+      } else {
+        playerEnded(roomId, item.id, item.videoId);
+      }
+    },
+    [roomId, roomSocket],
+  );
+
+  useEffect(() => {
+    if (!currentItem) {
+      lastAutoPlayItemIdRef.current = null;
+      return;
+    }
+
+    if (!autoAdvanceEnabled) {
+      lastAutoPlayItemIdRef.current = currentItem.id;
+      return;
+    }
+
+    if (lastAutoPlayItemIdRef.current === currentItem.id) {
+      return;
+    }
+
+    lastAutoPlayItemIdRef.current = currentItem.id;
+    setPlayerIssue(null);
+    setPlayRequestId((requestId) => requestId + 1);
+  }, [autoAdvanceEnabled, currentItem?.id]);
+
   const handleStart = () => {
     if (!currentItem) return;
-    setHasStarted(true);
-    if (roomSocket.status === "connected") {
-      roomSocket.send({
-        type: "PLAYER_STARTED",
-        payload: {
-          queueItemId: currentItem.id,
-          videoId: currentItem.videoId,
-        },
-      });
-    } else {
-      playerStarted(roomId, currentItem.id, currentItem.videoId);
-    }
+    lastAutoPlayItemIdRef.current = currentItem.id;
+    setAutoAdvanceEnabled(true);
+    setPlayerIssue(null);
+    setPlayRequestId((requestId) => requestId + 1);
   };
+
+  const handlePlaybackStarted = useCallback(() => {
+    if (!currentItem) return;
+    setPlayerIssue(null);
+    sendPlayerStarted(currentItem);
+  }, [currentItem, sendPlayerStarted]);
+
+  const handlePlaybackEnded = useCallback(() => {
+    if (!currentItem) return;
+    sendPlayerEnded(currentItem);
+  }, [currentItem, sendPlayerEnded]);
+
+  const handlePlaybackError = useCallback((errorCode: number) => {
+    setPlayerIssue(`播放器错误 ${errorCode}`);
+  }, []);
+
+  const handleAutoplayBlocked = useCallback(() => {
+    setPlayerIssue("浏览器阻止了自动播放，请手动开始。");
+  }, []);
 
   const handleNext = () => {
     if (!currentItem) return;
-    setHasStarted(false);
+    setPlayerIssue(null);
     if (roomSocket.status === "connected") {
       roomSocket.send({
         type: "PLAYER_ENDED",
@@ -57,16 +126,15 @@ export default function DisplayPage() {
       <div className="absolute inset-0 bg-[radial-gradient(circle_at_18%_20%,rgba(20,184,166,0.22),transparent_30%),radial-gradient(circle_at_78%_78%,rgba(251,113,133,0.18),transparent_28%)]" />
 
       {currentItem ? (
-        <iframe
-          key={`${currentItem.id}-${hasStarted ? "playing" : "ready"}`}
-          className="absolute inset-0 h-full w-full"
+        <FullscreenPlayer
+          key={currentItem.id}
+          videoId={currentItem.videoId}
           title={currentItem.title}
-          src={youtubeEmbedUrl(currentItem.videoId, {
-            start: hasStarted ? 0 : 30,
-            autoplay: hasStarted,
-          })}
-          allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
-          allowFullScreen
+          playRequestId={playRequestId}
+          onPlaybackStarted={handlePlaybackStarted}
+          onPlaybackEnded={handlePlaybackEnded}
+          onPlaybackError={handlePlaybackError}
+          onAutoplayBlocked={handleAutoplayBlocked}
         />
       ) : (
         <section className="relative z-10 grid min-h-screen place-items-center px-6 text-center">
@@ -139,6 +207,9 @@ export default function DisplayPage() {
             </h2>
             {currentItem?.channelTitle ? (
               <p className="mt-1 truncate text-sm text-slate-300">{currentItem.channelTitle}</p>
+            ) : null}
+            {playerIssue ? (
+              <p className="mt-2 text-sm font-medium text-rose-200">{playerIssue}</p>
             ) : null}
           </div>
           <div className="rounded-lg bg-white/10 px-3 py-2 text-right backdrop-blur">
