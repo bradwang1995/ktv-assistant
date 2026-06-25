@@ -59,7 +59,7 @@ export function FullscreenPlayer({
 
     startedRef.current = false;
     endedRef.current = false;
-    pendingPlayRef.current = false;
+    pendingPlayRef.current = playRequestId > 0;
     lastPlayRequestRef.current = playRequestId;
     setStatus("loading");
     setErrorCode(null);
