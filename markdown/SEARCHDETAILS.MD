@@ -13,7 +13,7 @@ This document captures the next search-system change request before implementati
 - First request returned real YouTube results with `cached: false`.
 - Repeated request returned the same result set with `cached: true`.
 - Current public API clamps requested `limit` to `1..8`.
-- Current YouTube provider can fill up to 100 cached results per search family, scores them, then returns the requested slice.
+- Current YouTube provider fills up to 50 cached results per search family from one `search.list` page, scores them, then returns the requested slice.
 - Current KV search cache TTL defaults to 365 days.
 - Blank-query search returns up to 8 cached recommendation results from `yt-search-recommendations:v1:CA:zh-Hans`.
 - Cached search-family reads are re-ranked against the user's current query before slicing.
@@ -32,11 +32,11 @@ The user-facing response can still return a small ranked set, but the cache shou
 
 ## Important API Constraints
 
-Google's current YouTube Data API docs say `search.list` `maxResults` accepts `0..50`; a 100-result target therefore needs pagination or multiple queries, not one single `search.list` request.
+Google's current YouTube Data API docs say `search.list` `maxResults` accepts `0..50`. For this project, the practical cache-fill target is therefore one `maxResults=50` request per cold search.
 
 The docs also say `q` supports Boolean OR with `|` and exclusion with `-`, which may help combine related terms into fewer requests. The pipe character must be URL-escaped when sent over HTTP.
 
-Quota should be treated as configurable. The docs currently describe a default `search.list` daily limit of 100 calls, while this project should support a stricter project-level budget such as 50 calls/day if that is what the account allows.
+Quota should be treated as configurable. The current project budget is treated as 50 `search.list` calls/day. With one request per cold search, the app can support up to about 50 uncached user searches/day before relying entirely on cache.
 
 References:
 
@@ -91,8 +91,8 @@ Future optional metadata can be added without breaking the frontend:
 ```json
 {
   "cacheMeta": {
-    "sourceQueryCount": 2,
-    "cachedResultCount": 100,
+    "sourceQueryCount": 1,
+    "cachedResultCount": 50,
     "servedFromExpandedCache": true
   }
 }
@@ -119,20 +119,19 @@ For a user query like `后来`, generate a compact set of search intents:
 
 The first implementation should avoid making an LLM call in the hot path. Start with deterministic expansion and a small curated alias/catalog file. Later, a background process or admin tool can enrich aliases.
 
-## 100-Result Cache Fill
+## 50-Result Single-Page Cache Fill
 
 Target behavior:
 
-- Store up to 100 deduplicated candidates per normalized search family.
-- Because YouTube `search.list` currently returns at most 50 per request, fetch 100 via:
-  - First page: `maxResults=50`
-  - Second page: `maxResults=50` with `nextPageToken`
-- If using multiple expanded queries, cap total outbound calls by daily quota budget.
+- Store up to 50 deduplicated candidates per normalized search family.
+- Use exactly one `search.list` request for a cold cache fill:
+  - First page only: `maxResults=50`
+- If future expanded-query work is added, cap total outbound calls by daily quota budget and keep the default hot path at one call.
 - Deduplicate by `videoId`.
 - Score all candidates once, then store the full scored list.
 - Serve the frontend from the cached list using the requested `limit`.
 
-If the daily budget is 50 `search.list` calls and each 100-result fill requires 2 calls, the hard maximum is about 25 full cache fills/day. The implementation should therefore choose cache-fill moments carefully.
+If the daily budget is 50 `search.list` calls and each cold fill uses 1 call, the hard maximum is about 50 full cache fills/day.
 
 ## Cache Model
 
@@ -171,9 +170,9 @@ Recommended cached entry fields:
   "sourceQueries": [],
   "results": [],
   "stats": {
-    "resultCount": 100,
-    "youtubeSearchCalls": 2,
-    "videosListCalls": 2
+    "resultCount": 50,
+    "youtubeSearchCalls": 1,
+    "videosListCalls": 1
   }
 }
 ```
@@ -206,16 +205,16 @@ Retain and extend current scoring:
 
 ## Implementation Phases
 
-1. Raise internal provider fetch to 50 results and store the full scored cache result.
+1. Keep internal provider fetch at 50 results and store the full scored cache result.
 2. Keep frontend response `limit` small while returning from the larger cache.
-3. Add second-page fetch for up to 100 results.
+3. Keep default cache fill to one `search.list` call.
 4. Add query-family keys and alias mapping.
-5. Add quota budget guardrails and cache-fill throttling.
+5. Keep quota budget guardrails and cache-fill throttling configurable.
 6. Add admin/debug visibility for cache entries and hit rates.
 
 ## Open Questions
 
-- Confirm the actual daily `search.list` limit for this Google Cloud project.
-- Decide whether 100 cached candidates should be per exact query, per song, or per artist/song family.
+- Monitor whether the actual daily `search.list` limit for this Google Cloud project changes from 50.
+- Decide whether 50 cached candidates should be per exact query, per song, or per artist/song family.
 - Decide whether related artist works should be curated manually, generated offline, or inferred from YouTube results.
 - Decide whether cache warming should happen only after user search or also via a manual/admin prewarm tool.

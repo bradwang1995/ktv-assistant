@@ -44,6 +44,9 @@ Last updated: 2026-06-26
 - `[x]` 已实现 D1 repository 写法，并通过真实 Cloudflare D1 remote API 验证
 - `[x]` KV namespace `SEARCH_CACHE` 已创建并完成 Worker 绑定验证
 - `[x]` 已通过真实 Cloudflare runtime 验证 WebSocket 房间连接和队列命令路径
+- `[x]` YouTube 搜索默认每次冷缓存填充只使用 1 个 `search.list` call，最多缓存 50 条候选，适配 50/day quota
+- `[x]` 手机端点击或播放搜索候选预览时会先选中该视频
+- `[x]` 大屏二维码已下移，避免遮挡 YouTube 顶部播放控件
 
 ## Phase 0 - Project Setup
 
@@ -156,7 +159,7 @@ Last updated: 2026-06-26
 - `[x]` Durable Object `PLAYER_STARTED`
 - `[x]` Durable Object `PLAYER_ENDED`
 - `[x]` D1 持久化 queue changes 已通过真实 Cloudflare 资源验证
-- `[ ]` Durable Object restart 后从 D1 恢复
+- `[x]` Durable Object restart 后从 D1 恢复
 - `[ ]` 两个手机页面实时同步验证
 - `[x]` 大屏和手机页面 WebSocket 同房间连接验证
 
@@ -184,8 +187,8 @@ Last updated: 2026-06-26
 - `[x]` KV cache write
 - `[x]` KV recommendation pool for blank-query default recommendations
 - `[x]` 前端优先调用 API search，失败时 fallback 到 mock search
-- `[ ]` 搜索失败友好提示
-- `[ ]` quota 保护策略
+- `[x]` 搜索失败友好提示
+- `[x]` quota 保护策略：默认 50 calls/day，每次 cache fill 默认 1 call / 50 results
 - `[x]` 使用真实 `YOUTUBE_API_KEY` 验证 YouTube result quality
 
 建议实现方式：
@@ -206,6 +209,7 @@ Last updated: 2026-06-26
 - `[x]` iframe URL 设置 `start=30`
 - `[x]` iframe URL 设置 `mute=1`
 - `[x]` 可以选择候选视频
+- `[x]` 点击或播放候选视频预览时会先选中该候选
 - `[x]` 选中态边框
 - `[x]` 点歌按钮
 - `[~]` 响应式布局已做基础版
@@ -250,6 +254,8 @@ Last updated: 2026-06-26
 - `[x]` mobile tab URL state
 - `[x]` display mobile link opens in a new browser tab
 - `[x]` YouTube API 使用说明或 footer
+- `[x]` search cache fill defaults to one YouTube search call and 50 cached results
+- `[x]` display QR code offset avoids the YouTube top-right playback/settings area
 - `[~]` 移动端 Safari 测试：测试清单已补，待实机验收
 - `[~]` Android Chrome 测试：测试清单已补，待实机验收
 - `[~]` iPad Safari 测试：测试清单已补，待实机验收

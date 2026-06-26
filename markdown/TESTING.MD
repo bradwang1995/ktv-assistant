@@ -80,6 +80,7 @@ https://ktv-assistant.bradwang1995.workers.dev/room/<roomId>/mobile
 - 前排结果优先匹配搜索的歌名本身；相关歌曲、同歌手歌曲和频道命中应排在后面。
 - 候选卡片里能看到 YouTube 预览 iframe。
 - 点选某个候选视频后，它会有选中态。
+- 直接点击或播放候选视频预览时，也会先选中该候选。
 - 点击点歌按钮后，会进入歌单 tab。
 
 9. 刷新 mobile 页面。
@@ -93,7 +94,7 @@ https://ktv-assistant.bradwang1995.workers.dev/room/<roomId>/mobile
 - Display 页面不用刷新就会更新。
 - 第一首歌自动成为当前播放。
 - 队列数量会更新。
-- 右上角二维码仍然存在。
+- 右上角二维码仍然存在，并且不应遮挡 YouTube 右上角播放设置。
 
 12. 再从手机页添加第二首歌。
 13. 队列预期：
@@ -174,7 +175,7 @@ Invoke-RestMethod `
 - `results` 有 0 到 8 条。
 - 如果 `YOUTUBE_API_KEY` 已配置，结果应该是真实 YouTube 搜索结果。
 
-快速测试时建议用 `cacheFill = $false`，避免为了填充大缓存池多花 YouTube quota。
+快速测试时建议用 `cacheFill = $false`，跳过冷缓存填充。正常用户搜索的冷缓存填充默认最多消耗 1 次 YouTube `search.list` call，并缓存最多 50 条候选结果。
 
 默认推荐 smoke test：
 
@@ -460,6 +461,7 @@ https://ktv-assistant.bradwang1995.workers.dev/room/<roomId>/mobile
 - Top results prioritize the searched song title itself; related songs, same-artist songs, and channel-only matches should rank lower.
 - Candidate cards show YouTube preview iframes.
 - Selecting a candidate highlights it.
+- Tapping or playing a candidate preview iframe should select that candidate first.
 - Tapping the add-song button moves you to the queue tab.
 
 9. Refresh the mobile page.
@@ -473,7 +475,7 @@ https://ktv-assistant.bradwang1995.workers.dev/room/<roomId>/mobile
 - The display page updates without refresh.
 - The first song becomes the current song.
 - The queue count updates.
-- The QR code remains visible.
+- The QR code remains visible and should not cover YouTube's top-right playback/settings area.
 
 12. Add a second song from the mobile page.
 13. Expected queue behavior:
@@ -554,7 +556,7 @@ Expected:
 - `results` has 0 to 8 items.
 - With `YOUTUBE_API_KEY` configured, results should be real YouTube results.
 
-Use `cacheFill = $false` for quick tests so you do not spend extra YouTube quota filling the larger cache pool.
+Use `cacheFill = $false` for quick tests to skip cold cache fill. Normal user searches default to at most 1 YouTube `search.list` call and up to 50 cached candidate results.
 
 Default recommendations smoke test:
 

@@ -490,7 +490,7 @@ curl -X POST https://ktv-assistant.bradwang1995.workers.dev/api/rooms/<roomId>/s
 - `[x]` `POST /api/rooms/:roomId/search` 返回 JSON
 - `[x]` 设置 `YOUTUBE_API_KEY` 后 search 返回真实 YouTube results
 - `[x]` 重复搜索时 KV cache 可命中
-- `[ ]` `/create` 创建房间后能进入 display 页面
+- `[x]` `/create` 创建房间后能进入 display 页面
 
 ## 当前不要手动改的东西
 
@@ -507,13 +507,11 @@ curl -X POST https://ktv-assistant.bradwang1995.workers.dev/api/rooms/<roomId>/s
 - Cloudflare Pages Functions bindings: https://developers.cloudflare.com/pages/functions/bindings/
 - Cloudflare Durable Objects getting started: https://developers.cloudflare.com/durable-objects/get-started/
 
-## Phase 7 - Production polish and reliability checks
+## 下一步 - 测试和部署
 
 Last updated: 2026-06-26
 
-这部分是当前 production MVP 的日常手动验收入口。完整双语测试流程见 `testing.md`。
-
-### 部署提醒
+当前手动资源准备已经完成。下一步只需要围绕 production 做构建、部署和真实设备验收；完整双语测试流程见 `TESTING.MD`。
 
 只改主应用 Worker + Assets 时：
 
@@ -532,44 +530,17 @@ npx wrangler deploy --keep-vars
 
 使用 `--keep-vars`，避免覆盖 Cloudflare Dashboard 中已有变量。不要把 `YOUTUBE_API_KEY` 或 Cloudflare token 写入源码。
 
-### Debug 页
-
-打开：
+Production 手动验收入口：
 
 ```txt
-https://ktv-assistant.bradwang1995.workers.dev/room/<roomId>/debug
+https://ktv-assistant.bradwang1995.workers.dev/create
 ```
 
-可以检查：
+建议本轮重点确认：
 
-- WebSocket 连接状态
-- 当前 playback state
-- queue 数量
-- room snapshot JSON
-- display / mobile / debug 链接复制
-- `POST /api/rooms/:roomId/cleanup` 清理 completed / removed 歌曲
-
-### Search rate limit
-
-当前主应用和 Room Worker 配置：
-
-```toml
-SEARCH_RATE_LIMIT_PER_MINUTE = "20"
-```
-
-超过限制时，搜索 API 应返回：
-
-- HTTP `429`
-- error code `SEARCH_RATE_LIMITED`
-- `retry-after` header
-
-### 仍需真实设备验收
-
-以下测试必须在真实设备上完成，不能只用本地 Vite server 代替：
-
-- Mobile Safari
-- Android Chrome
-- iPad Safari
-- Desktop Chrome
-
-每个设备至少测试创建房间、扫码/打开手机页、搜索、点两首歌、大屏开始播放、下一首、debug snapshot。
+- 创建房间后进入 display 页面。
+- 手机页扫码/打开后可以搜索并点歌。
+- 点击或播放搜索候选预览时，该候选会被选中。
+- 大屏二维码不遮挡 YouTube 右上角播放设置。
+- 搜索冷缓存填充默认只消耗 1 次 YouTube `search.list` call，最多缓存 50 条结果。
+- 不用本地 Vite server 验收 production 行为。

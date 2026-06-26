@@ -49,7 +49,7 @@ describe("KV search cache", () => {
     });
     const cached = await readSearchCache(kv, buildSearchQueryFamily("Later karaoke"));
 
-    expect(written?.stats.youtubeSearchCalls).toBe(2);
+    expect(written?.stats.youtubeSearchCalls).toBe(1);
     expect(written?.results).toHaveLength(6);
     expect(cached?.entry.queryFamily.hash).toBe(family.hash);
     expect(cached?.entry.results).toHaveLength(6);
@@ -102,7 +102,7 @@ function buildResponse(
     cached: false,
     results,
     cacheMeta: {
-      sourceQueryCount: 2,
+      sourceQueryCount: 1,
       cachedResultCount: results.length,
       servedFromExpandedCache: false,
       videosListCalls: 1,

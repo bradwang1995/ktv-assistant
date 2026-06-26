@@ -147,7 +147,7 @@ export default function DisplayPage() {
       <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_18%_20%,rgba(20,184,166,0.22),transparent_30%),radial-gradient(circle_at_78%_78%,rgba(251,113,133,0.18),transparent_28%)]" />
 
       <div className="relative z-10 flex min-h-screen flex-col">
-        <div className="absolute right-4 top-4 z-30 hidden rounded-lg bg-white p-3 text-slate-950 shadow-glow sm:block">
+        <div className="absolute right-4 top-20 z-30 hidden rounded-lg bg-white p-3 text-slate-950 shadow-glow sm:block">
           <div className="mb-2 flex items-center justify-between gap-3">
             <span className="inline-flex items-center gap-1.5 text-xs font-semibold">
               <QrCode size={14} />

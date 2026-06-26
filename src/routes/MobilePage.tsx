@@ -11,7 +11,7 @@ import {
 } from "lucide-react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { FormEvent, useEffect, useMemo, useState } from "react";
-import type { ReactNode } from "react";
+import type { KeyboardEvent, ReactNode } from "react";
 import { useParams, useSearchParams } from "react-router-dom";
 import { ConfirmDialog } from "../components/ConfirmDialog";
 import { StatusMessage } from "../components/StatusMessage";
@@ -341,7 +341,7 @@ function SearchTab({
       ) : null}
 
       {isLoadingResults ? (
-        <div className="mt-5 grid gap-3 sm:grid-cols-2">
+        <div className="mt-5 grid gap-4 sm:grid-cols-2">
           {[0, 1, 2, 3, 4, 5, 6, 7].map((item) => (
             <div key={item} className="h-52 animate-pulse rounded-lg bg-slate-100" />
           ))}
@@ -370,7 +370,7 @@ function SearchTab({
               {activeResults.length} 首
             </span>
           </div>
-          <div className="mt-5 grid gap-3 sm:grid-cols-2">
+          <div className="mt-5 grid gap-4 sm:grid-cols-2">
             {activeResults.map((result) => (
               <CandidateVideoCard
                 key={result.videoId}
@@ -428,27 +428,42 @@ function CandidateVideoCard({
   duplicate: boolean;
   onSelect: () => void;
 }) {
+  const handleKeyDown = (event: KeyboardEvent<HTMLElement>) => {
+    if (event.key !== "Enter" && event.key !== " ") {
+      return;
+    }
+
+    event.preventDefault();
+    onSelect();
+  };
+
   return (
-    <button
-      type="button"
-      onClick={onSelect}
-      className={`overflow-hidden rounded-lg border bg-white text-left transition ${
+    <article
+      role="button"
+      tabIndex={0}
+      aria-pressed={selected}
+      aria-label={`选择 ${result.title}`}
+      onPointerDownCapture={onSelect}
+      onKeyDown={handleKeyDown}
+      className={`cursor-pointer overflow-hidden rounded-lg border bg-white text-left transition focus:outline-none focus:ring-4 ${
         selected
           ? "border-teal-500 ring-4 ring-teal-100"
-          : "border-slate-200 hover:border-slate-300"
+          : "border-slate-200 hover:border-slate-300 focus:border-teal-500 focus:ring-teal-100"
       }`}
     >
-      <div className="aspect-video bg-slate-950">
-        <iframe
-          className="h-full w-full"
-          title={result.title}
-          src={youtubeEmbedUrl(result.videoId, { start: 30, muted: true })}
-          loading="lazy"
-          allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
-          allowFullScreen
-        />
+      <div className="p-2 pb-0">
+        <div className="aspect-video overflow-hidden rounded-md bg-slate-950">
+          <iframe
+            className="h-full w-full"
+            title={result.title}
+            src={youtubeEmbedUrl(result.videoId, { start: 30, muted: true })}
+            loading="lazy"
+            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+            allowFullScreen
+          />
+        </div>
       </div>
-      <div className="p-3">
+      <div className="px-3 pb-3 pt-3">
         <div className="flex items-start gap-2">
           <div className="mt-0.5 grid h-7 w-7 shrink-0 place-items-center rounded-md bg-rose-50 text-rose-700">
             <Play size={15} />
@@ -465,10 +480,15 @@ function CandidateVideoCard({
                 已在歌单
               </span>
             ) : null}
+            {selected ? (
+              <span className="mt-2 inline-flex rounded-md bg-teal-50 px-2 py-1 text-[11px] font-semibold text-teal-700">
+                已选中
+              </span>
+            ) : null}
           </div>
         </div>
       </div>
-    </button>
+    </article>
   );
 }
 

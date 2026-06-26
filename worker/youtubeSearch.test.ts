@@ -6,17 +6,13 @@ describe("youtube search helpers", () => {
     vi.unstubAllGlobals();
   });
 
-  it("fills a cache pool with two 50-result search pages", async () => {
+  it("fills a cache pool with one 50-result search page", async () => {
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
       const url = new URL(String(input));
 
       if (url.pathname.endsWith("/search")) {
-        const pageToken = url.searchParams.get("pageToken");
-        const start = pageToken === "page-2" ? 50 : 0;
-
         return jsonResponse({
-          nextPageToken: pageToken === "page-2" ? undefined : "page-2",
-          items: buildSearchItems(start, 50),
+          items: buildSearchItems(0, 50),
         });
       }
 
@@ -38,8 +34,8 @@ describe("youtube search helpers", () => {
     const response = await searchYouTubeVideos({
       query: "Later",
       apiKey: "test-key",
-      maxSearchCalls: 2,
-      targetResultCount: 100,
+      maxSearchCalls: 1,
+      targetResultCount: 50,
     });
     const searchCalls = fetchMock.mock.calls
       .map(([input]) => new URL(String(input)))
@@ -48,15 +44,15 @@ describe("youtube search helpers", () => {
       .map(([input]) => new URL(String(input)))
       .filter((url) => url.pathname.endsWith("/videos"));
 
-    expect(response.results).toHaveLength(100);
-    expect(response.cacheMeta?.sourceQueryCount).toBe(2);
-    expect(response.cacheMeta?.cachedResultCount).toBe(100);
-    expect(response.cacheMeta?.videosListCalls).toBe(2);
-    expect(searchCalls).toHaveLength(2);
-    expect(videosCalls).toHaveLength(2);
+    expect(response.results).toHaveLength(50);
+    expect(response.cacheMeta?.sourceQueryCount).toBe(1);
+    expect(response.cacheMeta?.cachedResultCount).toBe(50);
+    expect(response.cacheMeta?.videosListCalls).toBe(1);
+    expect(searchCalls).toHaveLength(1);
+    expect(videosCalls).toHaveLength(1);
     expect(searchCalls[0].searchParams.get("maxResults")).toBe("50");
     expect(searchCalls[0].searchParams.get("q")).toContain("later ktv|later karaoke");
-    expect(searchCalls[1].searchParams.get("pageToken")).toBe("page-2");
+    expect(searchCalls[0].searchParams.has("pageToken")).toBe(false);
   });
 
   it("parses ISO 8601 YouTube durations", () => {

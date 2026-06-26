@@ -16,7 +16,7 @@ import { searchYouTubeVideos } from "./youtubeSearch";
 import { getAvailableYouTubeSearchCalls, recordYouTubeSearchCalls } from "./youtubeQuota";
 
 const DEFAULT_YOUTUBE_DAILY_SEARCH_LIMIT = 50;
-const DEFAULT_YOUTUBE_SEARCH_CALLS_PER_FILL = 2;
+const DEFAULT_YOUTUBE_SEARCH_CALLS_PER_FILL = 1;
 
 interface SearchVideosOptions {
   query: string;

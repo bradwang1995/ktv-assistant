@@ -8,11 +8,10 @@ const REGION_CODE = "CA";
 const RELEVANCE_LANGUAGE = "zh-Hans";
 const SEARCH_PAGE_SIZE = 50;
 const VIDEO_DETAILS_CHUNK_SIZE = 50;
-const DEFAULT_TARGET_CACHE_RESULTS = 100;
-const DEFAULT_MAX_SEARCH_CALLS = 2;
+const DEFAULT_TARGET_CACHE_RESULTS = 50;
+const DEFAULT_MAX_SEARCH_CALLS = 1;
 
 interface YouTubeSearchListResponse {
-  nextPageToken?: string;
   items?: Array<{
     id?: {
       videoId?: string;
@@ -58,41 +57,22 @@ export async function searchYouTubeVideos({
   const dedupedResults = new Map<string, Omit<VideoSearchResult, "score" | "reasons">>();
   const usedSourceQueries: string[] = [];
   let searchCallCount = 0;
+  const sourceQuery = family.sourceQueries[0];
 
-  for (const sourceQuery of family.sourceQueries) {
-    let nextPageToken: string | undefined;
-    let sourceQueryUsed = false;
+  if (sourceQuery && maxSearchCalls > 0 && targetResultCount > 0) {
+    const searchBody = await fetchSearchPage({
+      apiKey,
+      sourceQuery,
+    });
+    searchCallCount = 1;
+    usedSourceQueries.push(sourceQuery);
 
-    do {
-      if (searchCallCount >= maxSearchCalls || dedupedResults.size >= targetResultCount) {
-        break;
+    for (const item of searchBody.items ?? []) {
+      const result = toBaseResult(item);
+
+      if (result && !dedupedResults.has(result.videoId)) {
+        dedupedResults.set(result.videoId, result);
       }
-
-      const searchBody = await fetchSearchPage({
-        apiKey,
-        sourceQuery,
-        pageToken: nextPageToken,
-      });
-      searchCallCount += 1;
-      sourceQueryUsed = true;
-
-      for (const item of searchBody.items ?? []) {
-        const result = toBaseResult(item);
-
-        if (result && !dedupedResults.has(result.videoId)) {
-          dedupedResults.set(result.videoId, result);
-        }
-      }
-
-      nextPageToken = searchBody.nextPageToken;
-    } while (nextPageToken);
-
-    if (sourceQueryUsed) {
-      usedSourceQueries.push(sourceQuery);
-    }
-
-    if (searchCallCount >= maxSearchCalls || dedupedResults.size >= targetResultCount) {
-      break;
     }
   }
 
@@ -128,11 +108,9 @@ export async function searchYouTubeVideos({
 async function fetchSearchPage({
   apiKey,
   sourceQuery,
-  pageToken,
 }: {
   apiKey: string;
   sourceQuery: string;
-  pageToken?: string;
 }) {
   const searchParams = new URLSearchParams({
     part: "snippet",
@@ -145,10 +123,6 @@ async function fetchSearchPage({
     relevanceLanguage: RELEVANCE_LANGUAGE,
     key: apiKey,
   });
-
-  if (pageToken) {
-    searchParams.set("pageToken", pageToken);
-  }
 
   const searchResponse = await fetch(`${YOUTUBE_SEARCH_URL}?${searchParams.toString()}`);
 
