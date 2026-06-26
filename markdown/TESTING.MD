@@ -1,6 +1,6 @@
 # Production 测试指南 / Production Testing Guide
 
-Last updated: 2026-06-25
+Last updated: 2026-06-26
 
 ## 中文版
 
@@ -60,34 +60,43 @@ https://ktv-assistant.bradwang1995.workers.dev/create
 ```
 
 4. 把这个 display 页面留在电脑、电视或大屏浏览器上。
-5. 用二维码、页面上的手机链接，或手动输入下面地址打开手机页：
+5. 用二维码、页面上的手机链接，或手动输入下面地址打开手机页。点击页面上的手机链接时应打开新的浏览器 tab，不应覆盖 display tab：
 
 ```txt
 https://ktv-assistant.bradwang1995.workers.dev/room/<roomId>/mobile
 ```
 
-6. 在手机页搜索一首歌，例如：
+6. 手机页默认应先显示最多 8 条缓存推荐。如果没有缓存，可以为空。
+7. 在手机页搜索一首歌，例如：
 
 ```txt
 后来
 ```
 
-7. 搜索结果预期：
+8. 搜索结果预期：
 
 - 搜索结果来自后端 `/api/rooms/:roomId/search`。
+- 最多显示 8 条结果。
+- 前排结果优先匹配搜索的歌名本身；相关歌曲、同歌手歌曲和频道命中应排在后面。
 - 候选卡片里能看到 YouTube 预览 iframe。
 - 点选某个候选视频后，它会有选中态。
 - 点击点歌按钮后，会进入歌单 tab。
 
-8. 第一首歌加入后的大屏预期：
+9. 刷新 mobile 页面。
+10. 预期：
+
+- 如果当前在歌单 tab，URL 应包含 `?tab=queue`，刷新后仍停留在歌单 tab。
+- 切回点歌 tab 后，URL 回到无 tab 参数或非 queue 参数。
+
+11. 第一首歌加入后的大屏预期：
 
 - Display 页面不用刷新就会更新。
 - 第一首歌自动成为当前播放。
 - 队列数量会更新。
 - 右上角二维码仍然存在。
 
-9. 再从手机页添加第二首歌。
-10. 队列预期：
+12. 再从手机页添加第二首歌。
+13. 队列预期：
 
 - 当前播放的第一首不会被打断。
 - 第二首会出现在即将播放队列里。
@@ -103,6 +112,7 @@ https://ktv-assistant.bradwang1995.workers.dev/room/<roomId>/mobile
 - YouTube 播放器开始播放。
 - app 只会在 YouTube 真正进入播放状态后发送 `PLAYER_STARTED`。
 - 如果浏览器阻止自动播放，大屏会显示 autoplay/browser 提示；这时可以再次点击开始，或直接和 YouTube player 交互。
+- `开始 K 歌` 和 `下一首` 按钮应位于播放器下方控制栏，不应遮挡 YouTube 进度条。
 
 3. 用 display 页的 `下一首` 按钮做快速切歌测试。
 4. 预期：
@@ -145,7 +155,7 @@ Invoke-RestMethod -Uri "$base/api/rooms/$roomId/snapshot" | ConvertTo-Json -Dept
 ```powershell
 $body = @{
   query = "后来"
-  limit = 4
+  limit = 8
   cacheFill = $false
 } | ConvertTo-Json
 
@@ -161,10 +171,29 @@ Invoke-RestMethod `
 
 - HTTP 请求成功。
 - 返回里有 `query`、`normalizedQuery`、`cached`、`results`。
-- `results` 有 0 到 4 条。
+- `results` 有 0 到 8 条。
 - 如果 `YOUTUBE_API_KEY` 已配置，结果应该是真实 YouTube 搜索结果。
 
 快速测试时建议用 `cacheFill = $false`，避免为了填充大缓存池多花 YouTube quota。
+
+默认推荐 smoke test：
+
+```powershell
+$body = @{
+  query = ""
+  limit = 8
+  cacheFill = $false
+} | ConvertTo-Json
+
+Invoke-RestMethod `
+  -Method Post `
+  -Uri "$base/api/rooms/$roomId/search" `
+  -ContentType "application/json" `
+  -Body $body |
+  ConvertTo-Json -Depth 20
+```
+
+预期：返回 `cached = true`，`results` 有 0 到 8 条，且不会调用 YouTube search quota。
 
 ## 中文 4. WebSocket Smoke Test
 
@@ -411,34 +440,43 @@ https://ktv-assistant.bradwang1995.workers.dev/create
 ```
 
 4. Keep this display page open on your laptop, TV, or desktop browser.
-5. Open the mobile page by scanning the QR code, clicking the mobile link, or manually opening:
+5. Open the mobile page by scanning the QR code, clicking the mobile link, or manually opening it. Clicking the display page mobile link should open a new browser tab and preserve the display tab:
 
 ```txt
 https://ktv-assistant.bradwang1995.workers.dev/room/<roomId>/mobile
 ```
 
-6. On the mobile page, search for a song, for example:
+6. The mobile search tab should show up to 8 cached recommendations by default. It can be empty if the cache has not been warmed.
+7. On the mobile page, search for a song, for example:
 
 ```txt
 后来
 ```
 
-7. Expected search behavior:
+8. Expected search behavior:
 
 - Results come from the backend `/api/rooms/:roomId/search` route.
+- Up to 8 results are shown.
+- Top results prioritize the searched song title itself; related songs, same-artist songs, and channel-only matches should rank lower.
 - Candidate cards show YouTube preview iframes.
 - Selecting a candidate highlights it.
 - Tapping the add-song button moves you to the queue tab.
 
-8. Expected display behavior after adding the first song:
+9. Refresh the mobile page.
+10. Expected behavior:
+
+- If the current tab is the queue tab, the URL should include `?tab=queue`, and refresh should keep the queue tab active.
+- Switching back to search should remove the queue tab URL state.
+
+11. Expected display behavior after adding the first song:
 
 - The display page updates without refresh.
 - The first song becomes the current song.
 - The queue count updates.
 - The QR code remains visible.
 
-9. Add a second song from the mobile page.
-10. Expected queue behavior:
+12. Add a second song from the mobile page.
+13. Expected queue behavior:
 
 - The current song is not interrupted.
 - The second song appears as upcoming.
@@ -454,6 +492,7 @@ This tests the production YouTube IFrame Player API path.
 - The YouTube player starts.
 - The app sends `PLAYER_STARTED` only after YouTube reports that playback has actually started.
 - If autoplay is blocked, the display shows a browser/autoplay warning; click start again or interact with the YouTube player.
+- `开始 K 歌` and `下一首` should sit below the iframe in the control bar and should not cover the YouTube progress bar.
 
 3. Use the display page `下一首` button for a fast auto-advance test.
 4. Expected behavior:
@@ -496,7 +535,7 @@ Search smoke test:
 ```powershell
 $body = @{
   query = "后来"
-  limit = 4
+  limit = 8
   cacheFill = $false
 } | ConvertTo-Json
 
@@ -512,10 +551,29 @@ Expected:
 
 - HTTP request succeeds.
 - Response includes `query`, `normalizedQuery`, `cached`, and `results`.
-- `results` has 0 to 4 items.
+- `results` has 0 to 8 items.
 - With `YOUTUBE_API_KEY` configured, results should be real YouTube results.
 
 Use `cacheFill = $false` for quick tests so you do not spend extra YouTube quota filling the larger cache pool.
+
+Default recommendations smoke test:
+
+```powershell
+$body = @{
+  query = ""
+  limit = 8
+  cacheFill = $false
+} | ConvertTo-Json
+
+Invoke-RestMethod `
+  -Method Post `
+  -Uri "$base/api/rooms/$roomId/search" `
+  -ContentType "application/json" `
+  -Body $body |
+  ConvertTo-Json -Depth 20
+```
+
+Expected: response has `cached = true`, `results` has 0 to 8 items, and YouTube search quota is not used.
 
 ## English 4. WebSocket Smoke Test
 

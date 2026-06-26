@@ -1,5 +1,5 @@
 import type { SearchResponse, VideoSearchResult } from "../src/types/youtube";
-import { scoreSearchResult } from "./scoring";
+import { rankSearchResultsForQuery } from "./scoring";
 import { buildSearchQueryFamily } from "./searchFamily";
 
 const YOUTUBE_SEARCH_URL = "https://www.googleapis.com/youtube/v3/search";
@@ -102,17 +102,13 @@ export async function searchYouTubeVideos({
     baseResults.map((result) => result.videoId),
   );
 
-  const results = baseResults
-    .map((result) =>
-      scoreSearchResult(
-        {
-          ...result,
-          durationSeconds: durations.get(result.videoId),
-        },
-        query,
-      ),
-    )
-    .sort((a, b) => b.score - a.score);
+  const results = rankSearchResultsForQuery(
+    baseResults.map((result) => ({
+      ...result,
+      durationSeconds: durations.get(result.videoId),
+    })),
+    query,
+  );
 
   return {
     query,

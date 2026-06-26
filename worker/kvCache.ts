@@ -4,14 +4,29 @@ import type { SearchQueryFamily } from "./searchFamily";
 
 const SEARCH_CACHE_VERSION = "v2";
 const SEARCH_CACHE_INDEX_VERSION = "v1";
+const SEARCH_RECOMMENDATIONS_VERSION = "v1";
 export const DEFAULT_SEARCH_CACHE_TTL_SECONDS = 60 * 60 * 24 * 365;
 export const DEFAULT_SEARCH_CACHE_MAX_ENTRY_BYTES = 512 * 1024;
 export const MAX_CACHED_SEARCH_RESULTS = 100;
+const MAX_RECOMMENDED_SEARCH_RESULTS = 40;
 
 interface JsonKvNamespace {
   get<T>(key: string, options: { type: "json" }): Promise<T | null>;
   get(key: string): Promise<string | null>;
   put(key: string, value: string, options?: KVNamespacePutOptions): Promise<void>;
+  list?(options?: KvListOptions): Promise<KvListResult>;
+}
+
+interface KvListOptions {
+  prefix?: string;
+  limit?: number;
+  cursor?: string;
+}
+
+interface KvListResult {
+  keys: Array<{ name: string }>;
+  list_complete: boolean;
+  cursor?: string;
 }
 
 interface SearchCacheStats {
@@ -45,6 +60,11 @@ export interface SearchCacheReadResult {
   familyHash: string;
 }
 
+interface SearchRecommendationsEntry {
+  updatedAt: string;
+  results: SearchResponse["results"];
+}
+
 export function searchCacheKey(familyHash: string, regionCode = "CA", language = "zh-Hans") {
   return searchCacheFamilyKey(familyHash, regionCode, language);
 }
@@ -57,12 +77,20 @@ export function searchCacheFamilyKey(
   return `yt-search:${SEARCH_CACHE_VERSION}:${familyHash}:${regionCode}:${language}`;
 }
 
+export function searchCacheFamilyKeyPrefix() {
+  return `yt-search:${SEARCH_CACHE_VERSION}:`;
+}
+
 export function searchCacheIndexKey(
   normalizedQuery: string,
   regionCode = "CA",
   language = "zh-Hans",
 ) {
   return `yt-search-index:${SEARCH_CACHE_INDEX_VERSION}:${normalizedQuery}:${regionCode}:${language}`;
+}
+
+export function searchRecommendationsKey(regionCode = "CA", language = "zh-Hans") {
+  return `yt-search-recommendations:${SEARCH_RECOMMENDATIONS_VERSION}:${regionCode}:${language}`;
 }
 
 export async function readSearchCache(
@@ -123,8 +151,29 @@ export async function writeSearchCache(
   });
 
   await writeSearchCacheIndexes(namespace, family, ttlSeconds);
+  await updateSearchRecommendations(namespace, payload.entry.results, ttlSeconds);
 
   return payload.entry;
+}
+
+export async function readSearchRecommendations(
+  namespace: JsonKvNamespace | undefined,
+  limit: number,
+) {
+  if (!namespace) {
+    return [];
+  }
+
+  const recommendations = await namespace.get<SearchRecommendationsEntry>(
+    searchRecommendationsKey(),
+    { type: "json" },
+  );
+
+  if (isValidRecommendationsEntry(recommendations)) {
+    return recommendations.results.slice(0, limit);
+  }
+
+  return readRecommendationsFromFamilyCaches(namespace, limit);
 }
 
 export async function touchSearchCache(
@@ -270,6 +319,56 @@ async function writeSearchCacheIndexes(
   );
 }
 
+async function updateSearchRecommendations(
+  namespace: JsonKvNamespace,
+  nextResults: SearchResponse["results"],
+  ttlSeconds: number,
+) {
+  const existing = await namespace.get<SearchRecommendationsEntry>(searchRecommendationsKey(), {
+    type: "json",
+  });
+  const mergedResults = uniqueResults([
+    ...nextResults,
+    ...(isValidRecommendationsEntry(existing) ? existing.results : []),
+  ]).slice(0, MAX_RECOMMENDED_SEARCH_RESULTS);
+  const entry: SearchRecommendationsEntry = {
+    updatedAt: new Date().toISOString(),
+    results: mergedResults,
+  };
+
+  await namespace.put(searchRecommendationsKey(), JSON.stringify(entry), {
+    expirationTtl: ttlSeconds,
+  });
+}
+
+async function readRecommendationsFromFamilyCaches(
+  namespace: JsonKvNamespace,
+  limit: number,
+) {
+  if (!namespace.list) {
+    return [];
+  }
+
+  const listed = await namespace.list({
+    prefix: searchCacheFamilyKeyPrefix(),
+    limit: 20,
+  });
+  const entries = (
+    await Promise.all(
+      listed.keys.map((key) =>
+        namespace.get<SearchCacheEntry>(key.name, {
+          type: "json",
+        }),
+      ),
+    )
+  ).filter(isValidSearchCacheEntry);
+  const results = entries
+    .sort((a, b) => cacheEntryTimestamp(b) - cacheEntryTimestamp(a))
+    .flatMap((entry) => entry.results.slice(0, limit));
+
+  return uniqueResults(results).slice(0, limit);
+}
+
 function isValidSearchCacheEntry(value: SearchCacheEntry | null): value is SearchCacheEntry {
   if (!value || !Array.isArray(value.results)) {
     return false;
@@ -278,6 +377,33 @@ function isValidSearchCacheEntry(value: SearchCacheEntry | null): value is Searc
   const expiresAtMs = Date.parse(value.expiresAt);
 
   return !Number.isFinite(expiresAtMs) || expiresAtMs > Date.now();
+}
+
+function isValidRecommendationsEntry(
+  value: SearchRecommendationsEntry | null,
+): value is SearchRecommendationsEntry {
+  return Boolean(value && Array.isArray(value.results));
+}
+
+function uniqueResults(results: SearchResponse["results"]) {
+  const seen = new Set<string>();
+  const unique: SearchResponse["results"] = [];
+
+  for (const result of results) {
+    if (seen.has(result.videoId)) {
+      continue;
+    }
+
+    seen.add(result.videoId);
+    unique.push(result);
+  }
+
+  return unique;
+}
+
+function cacheEntryTimestamp(entry: SearchCacheEntry) {
+  const value = Date.parse(entry.lastAccessedAt ?? entry.createdAt);
+  return Number.isFinite(value) ? value : 0;
 }
 
 function measureJsonBytes(value: unknown) {

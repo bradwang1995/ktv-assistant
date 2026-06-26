@@ -9,10 +9,10 @@ import {
   Wifi,
   WifiOff,
 } from "lucide-react";
-import { useMutation } from "@tanstack/react-query";
-import { FormEvent, useMemo, useState } from "react";
+import { useMutation, useQuery } from "@tanstack/react-query";
+import { FormEvent, useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
-import { useParams } from "react-router-dom";
+import { useParams, useSearchParams } from "react-router-dom";
 import { ConfirmDialog } from "../components/ConfirmDialog";
 import { StatusMessage } from "../components/StatusMessage";
 import { useRoomSocket, type SocketStatus } from "../hooks/useRoomSocket";
@@ -26,18 +26,47 @@ import type { QueueItem } from "../types/room";
 import type { ClientToServerMessage } from "../types/websocket";
 import type { VideoSearchResult } from "../types/youtube";
 
+const SEARCH_RESULT_LIMIT = 8;
+type MobileTab = "search" | "queue";
+
 export default function MobilePage() {
   const { roomId = "" } = useParams();
+  const [searchParams, setSearchParams] = useSearchParams();
   const roomSocket = useRoomSocket({ roomId, role: "mobile" });
   const snapshot = useRoomSnapshot(roomId);
   const currentItem = getCurrentItem(snapshot);
   const queuedItems = getQueuedItems(snapshot);
-  const activeTab = useMobileUiStore((state) => state.activeTab);
-  const setActiveTab = useMobileUiStore((state) => state.setActiveTab);
+  const storedActiveTab = useMobileUiStore((state) => state.activeTab);
+  const setStoredActiveTab = useMobileUiStore((state) => state.setActiveTab);
+  const activeTab = parseMobileTab(searchParams.get("tab"));
   const existingItems = useMemo(
     () => (currentItem ? [currentItem, ...queuedItems] : queuedItems),
     [currentItem, queuedItems],
   );
+
+  useEffect(() => {
+    if (storedActiveTab !== activeTab) {
+      setStoredActiveTab(activeTab);
+    }
+  }, [activeTab, setStoredActiveTab, storedActiveTab]);
+
+  const setActiveTab = (tab: MobileTab) => {
+    setStoredActiveTab(tab);
+    setSearchParams(
+      (currentParams) => {
+        const nextParams = new URLSearchParams(currentParams);
+
+        if (tab === "queue") {
+          nextParams.set("tab", "queue");
+        } else {
+          nextParams.delete("tab");
+        }
+
+        return nextParams;
+      },
+      { replace: true },
+    );
+  };
 
   return (
     <main className="min-h-screen bg-slate-100 text-slate-950">
@@ -83,6 +112,7 @@ export default function MobilePage() {
             isSocketConnected={roomSocket.status === "connected"}
             canUseLocalFallback={roomSocket.canUseLocalFallback}
             sendRoomMessage={roomSocket.send}
+            setActiveTab={setActiveTab}
           />
         ) : (
           <QueueTab
@@ -97,6 +127,10 @@ export default function MobilePage() {
       </div>
     </main>
   );
+}
+
+function parseMobileTab(value: string | null): MobileTab {
+  return value === "queue" ? "queue" : "search";
 }
 
 function TabButton({
@@ -130,26 +164,45 @@ function SearchTab({
   isSocketConnected,
   canUseLocalFallback,
   sendRoomMessage,
+  setActiveTab,
 }: {
   roomId: string;
   existingItems: QueueItem[];
   isSocketConnected: boolean;
   canUseLocalFallback: boolean;
   sendRoomMessage: (message: ClientToServerMessage) => boolean;
+  setActiveTab: (tab: MobileTab) => void;
 }) {
   const [query, setQuery] = useState("");
   const [selected, setSelected] = useState<VideoSearchResult | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [duplicateCandidate, setDuplicateCandidate] = useState<VideoSearchResult | null>(null);
-  const setActiveTab = useMobileUiStore((state) => state.setActiveTab);
+
+  const recommendationsQuery = useQuery({
+    queryKey: ["search-recommendations", roomId],
+    queryFn: async () => {
+      try {
+        return await searchVideosViaApi(roomId, "", SEARCH_RESULT_LIMIT, { cacheFill: false });
+      } catch (error) {
+        if (canUseLocalFallback) {
+          return searchMockVideos("经典 KTV", SEARCH_RESULT_LIMIT);
+        }
+
+        throw error;
+      }
+    },
+    enabled: roomId.length > 0,
+    staleTime: 60_000,
+    retry: 1,
+  });
 
   const searchMutation = useMutation({
     mutationFn: async (nextQuery: string) => {
       try {
-        return await searchVideosViaApi(roomId, nextQuery.trim(), 4);
+        return await searchVideosViaApi(roomId, nextQuery.trim(), SEARCH_RESULT_LIMIT);
       } catch (error) {
         if (canUseLocalFallback) {
-          return searchMockVideos(nextQuery, 4);
+          return searchMockVideos(nextQuery, SEARCH_RESULT_LIMIT);
         }
 
         throw error;
@@ -160,6 +213,25 @@ function SearchTab({
       setSelected(response.results[0] ?? null);
     },
   });
+
+  const activeResults = useMemo(
+    () => searchMutation.data?.results ?? recommendationsQuery.data?.results ?? [],
+    [recommendationsQuery.data?.results, searchMutation.data?.results],
+  );
+  const resultSignature = useMemo(
+    () => activeResults.map((result) => result.videoId).join(","),
+    [activeResults],
+  );
+
+  useEffect(() => {
+    setSelected((current) => {
+      if (current && activeResults.some((result) => result.videoId === current.videoId)) {
+        return current;
+      }
+
+      return activeResults[0] ?? null;
+    });
+  }, [activeResults, resultSignature]);
 
   const submitSearch = (event: FormEvent) => {
     event.preventDefault();
@@ -217,7 +289,9 @@ function SearchTab({
     setActiveTab("queue");
   };
 
-  const results = searchMutation.data?.results ?? [];
+  const showingRecommendations = !searchMutation.data;
+  const isLoadingResults =
+    searchMutation.isPending || (showingRecommendations && recommendationsQuery.isPending);
 
   return (
     <section className="flex-1 px-4 py-4">
@@ -228,7 +302,13 @@ function SearchTab({
         <input
           id="song-search"
           value={query}
-          onChange={(event) => setQuery(event.target.value)}
+          onChange={(event) => {
+            setQuery(event.target.value);
+
+            if (!event.target.value.trim()) {
+              searchMutation.reset();
+            }
+          }}
           placeholder="请输入歌名"
           className="min-w-0 flex-1 rounded-lg border border-slate-300 bg-white px-3 py-3 text-base outline-none transition placeholder:text-slate-400 focus:border-teal-500 focus:ring-4 focus:ring-teal-100"
         />
@@ -254,24 +334,44 @@ function SearchTab({
         </StatusMessage>
       ) : null}
 
-      {searchMutation.isPending ? (
+      {recommendationsQuery.isError && showingRecommendations ? (
+        <StatusMessage tone="warning" title="推荐加载失败" className="mt-4">
+          {searchErrorMessage(recommendationsQuery.error)}
+        </StatusMessage>
+      ) : null}
+
+      {isLoadingResults ? (
         <div className="mt-5 grid gap-3 sm:grid-cols-2">
-          {[0, 1, 2, 3].map((item) => (
+          {[0, 1, 2, 3, 4, 5, 6, 7].map((item) => (
             <div key={item} className="h-52 animate-pulse rounded-lg bg-slate-100" />
           ))}
         </div>
       ) : null}
 
-      {!searchMutation.isPending && searchMutation.data && results.length === 0 ? (
+      {!isLoadingResults && searchMutation.data && activeResults.length === 0 ? (
         <StatusMessage tone="info" className="mt-5">
           没有找到合适的视频。
         </StatusMessage>
       ) : null}
 
-      {results.length > 0 ? (
+      {!isLoadingResults && showingRecommendations && activeResults.length === 0 ? (
+        <StatusMessage tone="info" className="mt-5">
+          暂无推荐内容。
+        </StatusMessage>
+      ) : null}
+
+      {activeResults.length > 0 ? (
         <>
+          <div className="mt-5 flex items-center justify-between gap-3">
+            <h2 className="text-sm font-semibold text-slate-700">
+              {showingRecommendations ? "缓存推荐" : "搜索结果"}
+            </h2>
+            <span className="rounded-md bg-slate-100 px-2 py-1 text-xs text-slate-600">
+              {activeResults.length} 首
+            </span>
+          </div>
           <div className="mt-5 grid gap-3 sm:grid-cols-2">
-            {results.map((result) => (
+            {activeResults.map((result) => (
               <CandidateVideoCard
                 key={result.videoId}
                 result={result}

@@ -1,6 +1,6 @@
 # K歌助手手动操作清单
 
-Last updated: 2026-06-25
+Last updated: 2026-06-26
 
 这个文件专门记录需要你本人手动完成、授权或确认的步骤。项目实现仍然在代码里推进；这里是 Cloudflare 账号、资源创建、部署验证、API key 等必须由你掌控的部分。
 
@@ -454,7 +454,7 @@ curl -X POST https://ktv-assistant.bradwang1995.workers.dev/api/rooms/<roomId>/s
 }
 ```
 
-真实返回里 `results` 应该有 0 到 4 个视频。设置 `YOUTUBE_API_KEY` 后再执行同一个请求，应该返回真实 YouTube 搜索结果。重复同一个搜索时，如果 KV 已配置，`cached` 应该可能变成 `true`。
+真实返回里 `results` 应该有 0 到 8 个视频。设置 `YOUTUBE_API_KEY` 后再执行同一个请求，应该返回真实 YouTube 搜索结果。重复同一个搜索时，如果 KV 已配置，`cached` 应该可能变成 `true`。
 
 2026-06-25 已验证通过：
 
@@ -462,7 +462,7 @@ curl -X POST https://ktv-assistant.bradwang1995.workers.dev/api/rooms/<roomId>/s
 - 测试房间 `roomId`: `6z3b0y00`
 - 第一次请求 `POST /api/rooms/6z3b0y00/search` 返回 `200 OK`
 - 查询 `后来` 返回 `normalizedQuery = "后来 ktv"`
-- 第一次请求返回真实 YouTube results，`cached = false`，`results.length = 4`
+- 第一次请求返回真实 YouTube results，`cached = false`，`results.length <= 8`
 - 第一条结果：`刘若英 《后来》 Pinyin Karaoke Version Instrumental Music 拼音卡拉OK伴奏 KTV with Pinyin Lyrics 4k`
 - 第二次同 query 请求返回 `cached = true`，确认 KV cache 可命中
 

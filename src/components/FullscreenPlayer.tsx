@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from "react";
 import {
   loadYouTubeIframeApi,
   YOUTUBE_PLAYER_STATE,
@@ -28,21 +28,30 @@ interface FullscreenPlayerProps {
   onAutoplayBlocked: () => void;
 }
 
-export function FullscreenPlayer({
-  videoId,
-  title,
-  playRequestId,
-  onPlaybackStarted,
-  onPlaybackEnded,
-  onPlaybackError,
-  onAutoplayBlocked,
-}: FullscreenPlayerProps) {
+export interface FullscreenPlayerHandle {
+  play: () => void;
+}
+
+export const FullscreenPlayer = forwardRef<FullscreenPlayerHandle, FullscreenPlayerProps>(
+  function FullscreenPlayer(
+    {
+      videoId,
+      title,
+      playRequestId,
+      onPlaybackStarted,
+      onPlaybackEnded,
+      onPlaybackError,
+      onAutoplayBlocked,
+    },
+    ref,
+  ) {
   const shellRef = useRef<HTMLDivElement | null>(null);
   const playerRef = useRef<YouTubePlayer | null>(null);
   const pendingPlayRef = useRef(false);
   const startedRef = useRef(false);
   const endedRef = useRef(false);
   const lastPlayRequestRef = useRef(0);
+  const playRetryTimeoutsRef = useRef<number[]>([]);
   const callbacksRef = useRef({
     onPlaybackStarted,
     onPlaybackEnded,
@@ -51,6 +60,40 @@ export function FullscreenPlayer({
   });
   const [status, setStatus] = useState<PlayerStatus>("loading");
   const [errorCode, setErrorCode] = useState<number | null>(null);
+
+  const clearPlayRetryTimeouts = () => {
+    for (const timeoutId of playRetryTimeoutsRef.current) {
+      window.clearTimeout(timeoutId);
+    }
+
+    playRetryTimeoutsRef.current = [];
+  };
+
+  const requestPlay = (player: YouTubePlayer) => {
+    clearPlayRetryTimeouts();
+    pendingPlayRef.current = true;
+    player.playVideo();
+
+    for (const delay of [250, 900]) {
+      const timeoutId = window.setTimeout(() => {
+        if (pendingPlayRef.current) {
+          player.playVideo();
+        }
+      }, delay);
+
+      playRetryTimeoutsRef.current.push(timeoutId);
+    }
+  };
+
+  useImperativeHandle(ref, () => ({
+    play() {
+      if (playerRef.current) {
+        requestPlay(playerRef.current);
+      } else {
+        pendingPlayRef.current = true;
+      }
+    },
+  }));
 
   useEffect(() => {
     callbacksRef.current = {
@@ -93,7 +136,9 @@ export function FullscreenPlayer({
           height: "100%",
           videoId,
           playerVars: {
+            autoplay: playRequestId > 0 ? 1 : 0,
             controls: 1,
+            enablejsapi: 1,
             iv_load_policy: 3,
             playsinline: 1,
             rel: 0,
@@ -117,6 +162,7 @@ export function FullscreenPlayer({
 
     return () => {
       cancelled = true;
+      clearPlayRetryTimeouts();
       playerRef.current?.destroy();
       playerRef.current = null;
       shell.replaceChildren();
@@ -124,15 +170,21 @@ export function FullscreenPlayer({
 
     function handleReady(event: YouTubePlayerEvent) {
       setStatus("ready");
+      const currentShell = shellRef.current;
+
+      if (currentShell) {
+        allowIframeAutoplay(event.target, currentShell);
+      }
 
       if (pendingPlayRef.current) {
-        event.target.playVideo();
+        requestPlay(event.target);
       }
     }
 
     function handleStateChange(event: YouTubePlayerStateChangeEvent) {
       if (event.data === YOUTUBE_PLAYER_STATE.PLAYING) {
         pendingPlayRef.current = false;
+        clearPlayRetryTimeouts();
         setStatus("playing");
 
         if (!startedRef.current) {
@@ -143,6 +195,7 @@ export function FullscreenPlayer({
       }
 
       if (event.data === YOUTUBE_PLAYER_STATE.ENDED) {
+        clearPlayRetryTimeouts();
         setStatus("ended");
 
         if (!endedRef.current) {
@@ -168,6 +221,7 @@ export function FullscreenPlayer({
     }
 
     function handleError(event: YouTubePlayerErrorEvent) {
+      clearPlayRetryTimeouts();
       setErrorCode(event.data);
       setStatus("error");
       callbacksRef.current.onPlaybackError(event.data);
@@ -175,6 +229,7 @@ export function FullscreenPlayer({
 
     function handleAutoplayBlocked() {
       pendingPlayRef.current = false;
+      clearPlayRetryTimeouts();
       setStatus("blocked");
       callbacksRef.current.onAutoplayBlocked();
     }
@@ -187,7 +242,9 @@ export function FullscreenPlayer({
 
     lastPlayRequestRef.current = playRequestId;
     pendingPlayRef.current = true;
-    playerRef.current?.playVideo();
+    if (playerRef.current) {
+      requestPlay(playerRef.current);
+    }
   }, [playRequestId]);
 
   const statusText = getStatusText(status, errorCode);
@@ -205,6 +262,16 @@ export function FullscreenPlayer({
         </div>
       ) : null}
     </>
+  );
+  },
+);
+
+function allowIframeAutoplay(player: YouTubePlayer, shell: HTMLElement) {
+  const iframe = player.getIframe?.() ?? shell.querySelector("iframe");
+
+  iframe?.setAttribute(
+    "allow",
+    "accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share",
   );
 }
 

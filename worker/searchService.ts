@@ -4,10 +4,12 @@ import {
   DEFAULT_SEARCH_CACHE_TTL_SECONDS,
   MAX_CACHED_SEARCH_RESULTS,
   readSearchCache,
+  readSearchRecommendations,
   touchSearchCache,
   writeSearchCache,
 } from "./kvCache";
 import { searchMockVideos } from "./mockSearchProvider";
+import { rankSearchResultsForQuery } from "./scoring";
 import { buildSearchQueryFamily } from "./searchFamily";
 import type { Env } from "./types";
 import { searchYouTubeVideos } from "./youtubeSearch";
@@ -27,7 +29,7 @@ interface SearchVideosOptions {
 export async function searchVideos({
   query,
   artist,
-  limit = 4,
+  limit = 8,
   cacheFill = true,
   env,
 }: SearchVideosOptions): Promise<SearchResponse> {
@@ -43,7 +45,7 @@ export async function searchVideos({
         query,
         normalizedQuery: cached.entry.normalizedQuery,
         cached: true,
-        results: cached.entry.results,
+        results: rankSearchResultsForQuery(cached.entry.results, query),
         cacheMeta: {
           sourceQueryCount: cached.entry.stats.youtubeSearchCalls,
           cachedResultCount: cached.entry.results.length,
@@ -61,6 +63,7 @@ export async function searchVideos({
     ? await searchLiveVideos({
         query,
         artist,
+        limit,
         cacheFill,
         env,
       })
@@ -89,14 +92,39 @@ export async function searchVideos({
   );
 }
 
+export async function getSearchRecommendations({
+  limit = 8,
+  env,
+}: {
+  limit?: number;
+  env: Env;
+}): Promise<SearchResponse> {
+  const results = await readSearchRecommendations(env.SEARCH_CACHE, limit);
+
+  return {
+    query: "",
+    normalizedQuery: "",
+    cached: true,
+    results,
+    cacheMeta: {
+      sourceQueryCount: 0,
+      cachedResultCount: results.length,
+      servedFromExpandedCache: true,
+      sourceQueries: [],
+    },
+  };
+}
+
 async function searchLiveVideos({
   query,
   artist,
+  limit,
   cacheFill,
   env,
 }: {
   query: string;
   artist?: string;
+  limit: number;
   cacheFill: boolean;
   env: Env;
 }) {
@@ -128,7 +156,7 @@ async function searchLiveVideos({
     } satisfies SearchResponse;
   }
 
-  const targetResultCount = cacheFill ? MAX_CACHED_SEARCH_RESULTS : 4;
+  const targetResultCount = cacheFill ? MAX_CACHED_SEARCH_RESULTS : limit;
   const response = await searchYouTubeVideos({
     query,
     artist,

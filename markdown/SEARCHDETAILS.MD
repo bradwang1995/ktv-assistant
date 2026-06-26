@@ -1,6 +1,6 @@
 # Search Details
 
-Last updated: 2026-06-25
+Last updated: 2026-06-26
 
 This document captures the next search-system change request before implementation. The goal is to spend scarce YouTube search quota on broader, reusable result sets, then serve most user searches from cache.
 
@@ -12,9 +12,11 @@ This document captures the next search-system change request before implementati
 - Query: `后来`
 - First request returned real YouTube results with `cached: false`.
 - Repeated request returned the same result set with `cached: true`.
-- Current public API clamps requested `limit` to `1..4`.
-- Current YouTube provider fetches up to `25` search results internally, scores them, then returns the requested slice.
-- Current KV search cache TTL is 6 hours.
+- Current public API clamps requested `limit` to `1..8`.
+- Current YouTube provider can fill up to 100 cached results per search family, scores them, then returns the requested slice.
+- Current KV search cache TTL defaults to 365 days.
+- Blank-query search returns up to 8 cached recommendation results from `yt-search-recommendations:v1:CA:zh-Hans`.
+- Cached search-family reads are re-ranked against the user's current query before slicing.
 
 ## Product Goal
 
@@ -56,7 +58,7 @@ Near-term request body:
 ```json
 {
   "query": "后来",
-  "limit": 4
+  "limit": 8
 }
 ```
 
@@ -66,7 +68,7 @@ Future optional fields:
 {
   "query": "后来",
   "artist": "刘若英",
-  "limit": 4,
+  "limit": 8,
   "cacheFill": true
 }
 ```
@@ -145,6 +147,7 @@ Recommended future key model:
 ```txt
 yt-search:v2:<searchFamilyHash>:CA:zh-Hans
 yt-search-index:v1:<normalizedQuery>:CA:zh-Hans -> <searchFamilyHash>
+yt-search-recommendations:v1:CA:zh-Hans
 ```
 
 This allows several equivalent queries to reuse the same cached family:
@@ -193,6 +196,8 @@ The idea of using up to 50% of available storage for search cache is reasonable 
 
 Retain and extend current scoring:
 
+- Strongly prefer results whose title exactly matches, starts with, or contains the searched song title.
+- Treat channel-only query matches, same-artist songs, and related songs as lower-priority results.
 - Prefer title/channel signals: `KTV`, `karaoke`, `卡拉OK`, `伴奏`, `instrumental`, `pinyin`.
 - Prefer embeddable videos.
 - Prefer medium-length music videos and karaoke tracks.

@@ -17,6 +17,7 @@ export interface YouTubePlayer {
   cueVideoById: (options: { videoId: string; startSeconds?: number }) => void;
   loadVideoById: (options: { videoId: string; startSeconds?: number }) => void;
   destroy: () => void;
+  getIframe?: () => HTMLIFrameElement;
 }
 
 export interface YouTubePlayerEvent {

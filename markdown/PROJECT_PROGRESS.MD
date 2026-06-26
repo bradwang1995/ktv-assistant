@@ -21,7 +21,8 @@ Last updated: 2026-06-26
 - `[x]` 手机点歌页 `/room/:roomId/mobile`
 - `[x]` 大屏页显示二维码，二维码指向同房间手机页
 - `[x]` 手机页有「点歌」和「歌单」两个标签
-- `[x]` 模拟搜索返回 4 个候选视频
+- `[x]` 手机页 tab 同步到 URL，刷新后保留当前 tab
+- `[x]` 模拟搜索返回 8 个候选视频
 - `[x]` 候选视频使用 YouTube embed 预览
 - `[x]` 用户可以选择候选视频并点歌
 - `[x]` 歌单支持置顶和删歌确认
@@ -36,6 +37,8 @@ Last updated: 2026-06-26
 
 - `[~]` 实时同步目前是本地浏览器同步，不是 Cloudflare Durable Object
 - `[x]` 搜索后端已接真实 YouTube Data API，前端仍保留 mock fallback
+- `[x]` 搜索结果默认返回最多 8 条，并优先排序歌名本身匹配
+- `[x]` 点歌页进入时显示最多 8 条 KV 缓存推荐
 - `[~]` 大屏播放器已接入 YouTube IFrame Player API 状态机；移动端预览仍使用普通 iframe
 - `[x]` Cloudflare backend 已有 API router、D1 repository、Worker 入口和 Room Durable Object Worker 配置
 - `[x]` 已实现 D1 repository 写法，并通过真实 Cloudflare D1 remote API 验证
@@ -172,12 +175,14 @@ Last updated: 2026-06-26
 - `[x]` 前端 mock search flow
 - `[x]` `normalizeQuery`
 - `[x]` `worker/scoring.ts` 初始评分函数
+- `[x]` 搜索评分优先标题精确/前缀/包含歌名匹配，降低相关歌和频道命中权重
 - `[x]` `POST /api/rooms/:roomId/search`
 - `[x]` KV cache lookup
 - `[x]` YouTube `search.list`
 - `[x]` 可选 `videos.list` 获取 duration
 - `[x]` 结果过滤和排序
 - `[x]` KV cache write
+- `[x]` KV recommendation pool for blank-query default recommendations
 - `[x]` 前端优先调用 API search，失败时 fallback 到 mock search
 - `[ ]` 搜索失败友好提示
 - `[ ]` quota 保护策略
@@ -191,11 +196,12 @@ Last updated: 2026-06-26
 
 ## Phase 5 - YouTube Preview Players
 
-设计目标：手机端显示 4 个候选视频，静音，从约 30 秒开始预览。
+设计目标：手机端显示 8 个候选视频，静音，从约 30 秒开始预览。
 
 当前状态：
 
-- `[x]` 显示 4 个候选卡片
+- `[x]` 显示 8 个候选卡片
+- `[x]` 进入点歌页时显示缓存推荐
 - `[x]` 每个候选卡片有 YouTube iframe
 - `[x]` iframe URL 设置 `start=30`
 - `[x]` iframe URL 设置 `mute=1`
@@ -224,6 +230,8 @@ Last updated: 2026-06-26
 - `[x]` 自动发送 `PLAYER_STARTED`
 - `[x]` 自动发送 `PLAYER_ENDED`
 - `[x]` 自动切下一首并播放
+- `[x]` 播放控制栏移到 YouTube iframe 外，避免遮挡进度条
+- `[x]` `开始 K 歌` 点击路径直接请求播放器播放，并保留自动播放重试
 - `[x]` 播放失败兜底 UI
 - `[ ]` 浏览器 autoplay 限制下的真实设备测试
 
@@ -239,6 +247,8 @@ Last updated: 2026-06-26
 - `[x]` debug page `/room/:roomId/debug`
 - `[x]` basic room cleanup endpoint `POST /api/rooms/:roomId/cleanup`
 - `[x]` search rate limiting
+- `[x]` mobile tab URL state
+- `[x]` display mobile link opens in a new browser tab
 - `[x]` YouTube API 使用说明或 footer
 - `[~]` 移动端 Safari 测试：测试清单已补，待实机验收
 - `[~]` Android Chrome 测试：测试清单已补，待实机验收

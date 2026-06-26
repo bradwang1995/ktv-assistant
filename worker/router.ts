@@ -9,7 +9,7 @@ import {
 import { apiError, jsonResponse } from "./json";
 import { checkRateLimit } from "./rateLimit";
 import { createRoomId, isValidRoomId } from "./roomIds";
-import { searchVideos } from "./searchService";
+import { getSearchRecommendations, searchVideos } from "./searchService";
 import type { Env } from "./types";
 
 const CREATE_ROOM_ATTEMPTS = 3;
@@ -172,14 +172,10 @@ async function searchRoomVideos(request: Request, env: Env, roomId: string) {
   }
 
   const query = body.query.trim();
+  const limit = clampLimit(body.limit);
 
   if (query.length === 0) {
-    return jsonResponse({
-      query: body.query,
-      normalizedQuery: "",
-      cached: false,
-      results: [],
-    });
+    return jsonResponse(await getSearchRecommendations({ limit, env }));
   }
 
   if (query.length > 100) {
@@ -192,7 +188,6 @@ async function searchRoomVideos(request: Request, env: Env, roomId: string) {
     return apiError(400, "ARTIST_TOO_LONG", "Artist must be 100 characters or fewer.");
   }
 
-  const limit = clampLimit(body.limit);
   const cacheFill = typeof body.cacheFill === "boolean" ? body.cacheFill : true;
   const rateLimit = await checkRateLimit({
     namespace: env.SEARCH_CACHE,
@@ -326,10 +321,10 @@ function isSearchRequestBody(
 
 function clampLimit(limit: number | undefined) {
   if (typeof limit !== "number" || !Number.isFinite(limit)) {
-    return 4;
+    return 8;
   }
 
-  return Math.min(Math.max(Math.floor(limit), 1), 4);
+  return Math.min(Math.max(Math.floor(limit), 1), 8);
 }
 
 function getSearchRateLimitPerMinute(env: Env) {

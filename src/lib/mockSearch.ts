@@ -9,6 +9,8 @@ const MOCK_VIDEO_IDS = [
   "OPf0YbXqDm0",
   "RgKAFK5djSk",
   "09R8_2nJtjg",
+  "YQHsXMglC9A",
+  "60ItHLz5WEA",
 ];
 
 const TITLE_PATTERNS = [
@@ -16,11 +18,15 @@ const TITLE_PATTERNS = [
   "{query} 卡拉OK 字幕版",
   "{query} 高清 KTV",
   "{query} karaoke 练唱版",
+  "{query} 原版伴奏",
+  "{query} KTV 女声版",
+  "{query} KTV 男声版",
+  "{query} instrumental karaoke",
 ];
 
 export async function searchMockVideos(
   query: string,
-  limit = 4,
+  limit = 8,
 ): Promise<SearchResponse> {
   const normalizedQuery = normalizeQuery(query);
 
@@ -41,11 +47,18 @@ export async function searchMockVideos(
       return {
         videoId,
         title: pattern.replace("{query}", query.trim()),
-        channelTitle: ["KTV 点唱频道", "华语伴奏精选", "朋友练歌房", "Karaoke Studio"][
-          index
-        ],
+        channelTitle: [
+          "KTV 点唱频道",
+          "华语伴奏精选",
+          "朋友练歌房",
+          "Karaoke Studio",
+          "经典练唱库",
+          "中文伴奏台",
+          "KTV Remix",
+          "Instrumental Studio",
+        ][index],
         thumbnailUrl: youtubeThumbnailUrl(videoId),
-        durationSeconds: [265, 241, 304, 278][index],
+        durationSeconds: [265, 241, 304, 278, 252, 299, 286, 270][index],
         score: 32 - index * 3,
         reasons: ["mock result", "title contains KTV", "starts near 30 seconds"],
       };

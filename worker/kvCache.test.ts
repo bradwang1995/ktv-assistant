@@ -2,8 +2,10 @@ import { describe, expect, it } from "vitest";
 import type { SearchResponse, VideoSearchResult } from "../src/types/youtube";
 import {
   readSearchCache,
+  readSearchRecommendations,
   searchCacheFamilyKey,
   searchCacheIndexKey,
+  searchRecommendationsKey,
   writeSearchCache,
 } from "./kvCache";
 import { buildSearchQueryFamily } from "./searchFamily";
@@ -52,6 +54,22 @@ describe("KV search cache", () => {
     expect(cached?.entry.queryFamily.hash).toBe(family.hash);
     expect(cached?.entry.results).toHaveLength(6);
     expect(kv.values.has(searchCacheFamilyKey(family.hash))).toBe(true);
+  });
+
+  it("updates the default recommendation pool from written cache entries", async () => {
+    const kv = new MemoryKv();
+    const family = buildSearchQueryFamily("Later");
+    const response = buildResponse("Later", family.normalizedQuery, buildResults(10));
+
+    await writeSearchCache(kv, family, response, {
+      ttlSeconds: 60 * 60 * 24 * 365,
+      maxEntryBytes: 100_000,
+    });
+    const recommendations = await readSearchRecommendations(kv, 8);
+
+    expect(kv.values.has(searchRecommendationsKey())).toBe(true);
+    expect(recommendations).toHaveLength(8);
+    expect(recommendations[0].videoId).toBe("video-0");
   });
 
   it("prunes low-ranked hits when a cache entry would be too large", async () => {
