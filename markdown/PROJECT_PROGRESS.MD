@@ -1,6 +1,6 @@
 # K歌助手项目进展 Tracker
 
-Last updated: 2026-06-26
+Last updated: 2026-07-02
 
 这个文件用来跟踪 `KTV_Assistant_Cloudflare_Design_Doc.md` 里的实现进度。我们后续每一轮都可以按这里的步骤推进：做一小块、验证一小块、更新一小块。
 
@@ -22,13 +22,14 @@ Last updated: 2026-06-26
 - `[x]` 大屏页显示二维码，二维码指向同房间手机页
 - `[x]` 手机页有「点歌」和「歌单」两个标签
 - `[x]` 手机页 tab 同步到 URL，刷新后保留当前 tab
-- `[x]` 模拟搜索返回 8 个候选视频
+- `[x]` 模拟搜索可返回更多候选，手机端先显示 8 个并可从当前缓存继续展开
 - `[x]` 候选视频使用 YouTube embed 预览
 - `[x]` 用户可以选择候选视频并点歌
 - `[x]` 歌单支持置顶和删歌确认
 - `[x]` 大屏和手机页在同一浏览器环境里通过 `localStorage + BroadcastChannel` 同步
 - `[x]` 第一首歌自动成为当前播放
 - `[x]` 大屏可手动「开始 K 歌」和「下一首」
+- `[x]` 手机歌单页可远程「切歌」和「重唱」
 - `[x]` 基础 reducer 单元测试
 - `[x]` `npm run build` 通过
 - `[x]` `npm run test` 通过
@@ -37,8 +38,10 @@ Last updated: 2026-06-26
 
 - `[~]` 实时同步目前是本地浏览器同步，不是 Cloudflare Durable Object
 - `[x]` 搜索后端已接真实 YouTube Data API，前端仍保留 mock fallback
-- `[x]` 搜索结果默认返回最多 8 条，并优先排序歌名本身匹配
+- `[x]` 搜索结果 API 最多返回 40 条，手机端默认显示 8 条，并优先排序歌名/歌手本身匹配
 - `[x]` 点歌页进入时显示最多 8 条 KV 缓存推荐
+- `[x]` 搜索支持 `歌名 / 歌手` selector 和 `带原唱` toggle
+- `[x]` 搜索状态按房间持久化，切到歌单再回来后保留 query、结果、可见数量和选中/预览状态
 - `[~]` 大屏播放器已接入 YouTube IFrame Player API 状态机；移动端预览仍使用普通 iframe
 - `[x]` Cloudflare backend 已有 API router、D1 repository、Worker 入口和 Room Durable Object Worker 配置
 - `[x]` 已实现 D1 repository 写法，并通过真实 Cloudflare D1 remote API 验证
@@ -46,6 +49,7 @@ Last updated: 2026-06-26
 - `[x]` 已通过真实 Cloudflare runtime 验证 WebSocket 房间连接和队列命令路径
 - `[x]` YouTube 搜索默认每次冷缓存填充只使用 1 个 `search.list` call，最多缓存 50 条候选，适配 50/day quota
 - `[x]` 手机端点击或播放搜索候选预览时会先选中该视频
+- `[x]` 手机端同一时间只挂载一个 active preview iframe
 - `[x]` 大屏二维码已下移，避免遮挡 YouTube 顶部播放控件
 
 ## Phase 0 - Project Setup
@@ -158,6 +162,7 @@ Last updated: 2026-06-26
 - `[x]` Durable Object `REMOVE_QUEUE_ITEM`
 - `[x]` Durable Object `PLAYER_STARTED`
 - `[x]` Durable Object `PLAYER_ENDED`
+- `[x]` Durable Object `RESTART_CURRENT_ITEM`
 - `[x]` D1 持久化 queue changes 已通过真实 Cloudflare 资源验证
 - `[x]` Durable Object restart 后从 D1 恢复
 - `[ ]` 两个手机页面实时同步验证
@@ -184,6 +189,10 @@ Last updated: 2026-06-26
 - `[x]` YouTube `search.list`
 - `[x]` 可选 `videos.list` 获取 duration
 - `[x]` 结果过滤和排序
+- `[x]` 搜索支持 `song` / `artist` 模式
+- `[x]` 搜索支持 `includeOriginalVocal`，并用不同 cache family 区分伴奏/原唱意图
+- `[x]` 前端滚动加载更多来自当前搜索响应缓存，不触发新 search API call
+- `[x]` 前端搜索状态 localStorage 持久化
 - `[x]` KV cache write
 - `[x]` KV recommendation pool for blank-query default recommendations
 - `[x]` 前端优先调用 API search，失败时 fallback 到 mock search
@@ -204,12 +213,14 @@ Last updated: 2026-06-26
 当前状态：
 
 - `[x]` 显示 8 个候选卡片
+- `[x]` 搜索后最多缓存展示 40 个候选，默认先显示 8 个
 - `[x]` 进入点歌页时显示缓存推荐
-- `[x]` 每个候选卡片有 YouTube iframe
+- `[x]` 只有 active 候选卡片挂载 YouTube iframe，其他候选显示封面
 - `[x]` iframe URL 设置 `start=30`
 - `[x]` iframe URL 设置 `mute=1`
 - `[x]` 可以选择候选视频
 - `[x]` 点击或播放候选视频预览时会先选中该候选
+- `[x]` 同一时间只有一个 preview iframe 可播放
 - `[x]` 选中态边框
 - `[x]` 点歌按钮
 - `[~]` 响应式布局已做基础版
@@ -229,6 +240,8 @@ Last updated: 2026-06-26
 - `[x]` 大屏 YouTube IFrame Player API 播放当前视频
 - `[x]` 手动「开始 K 歌」
 - `[x]` 手动「下一首」
+- `[x]` 手机端远程「切歌」会推进到下一首
+- `[x]` 手机端远程「重唱」会让当前歌曲从头播放
 - `[x]` YouTube IFrame Player API loader
 - `[x]` 监听 `onStateChange`
 - `[x]` 自动发送 `PLAYER_STARTED`
@@ -250,11 +263,13 @@ Last updated: 2026-06-26
 - `[x]` loading states 统一
 - `[x]` error states 统一
 - `[x]` duplicate song warning
+- `[x]` 点歌成功后停留在搜索页并显示成功反馈
 - `[x]` copy room link button polish
 - `[x]` debug page `/room/:roomId/debug`
 - `[x]` basic room cleanup endpoint `POST /api/rooms/:roomId/cleanup`
 - `[x]` search rate limiting
 - `[x]` mobile tab URL state
+- `[x]` mobile search state persistence
 - `[x]` display mobile link opens in a new browser tab
 - `[x]` YouTube API 使用说明或 footer
 - `[x]` search cache fill defaults to one YouTube search call and 50 cached results
@@ -285,6 +300,7 @@ Last updated: 2026-06-26
 - `[x]` Room command unit tests
 - `[x]` WebSocket runtime integration tests
 - `[x]` Search rate-limit unit tests
+- `[x]` Search family/ranking unit tests cover song/artist and original-vocal modes
 - `[ ]` Playwright E2E test
 - `[x]` Local browser smoke: display autoplay params, saved quality preference, and `下一首` continuation verified through Vite dev server
 - `[~]` Manual QR scan / device matrix documented in `testing.md`
@@ -342,6 +358,7 @@ Goal: replace mock search with backend search provider while keeping mock availa
 - `[x]` Implement YouTube provider
 - `[x]` Implement KV cache
 - `[x]` Add scoring/ranking tests
+- `[x]` Add search type/original-vocal ranking and query-family tests
 - `[x]` Switch frontend to API search with mock fallback
 - `[x]` Configure `YOUTUBE_API_KEY` secret in Cloudflare Workers
 - `[x]` Runtime-test search with real YouTube Data API
@@ -362,6 +379,7 @@ Goal: display page detects playback events and advances automatically.
 Goal: make the MVP comfortable enough for a real small gathering.
 
 - `[~]` Phone portrait QA documented, awaiting real-device pass
+- `[x]` Phone portrait home page now exposes both `创建房间` and `扫码点歌` CTAs
 - `[~]` Landscape display QA documented, awaiting real-device pass
 - `[x]` Better loading/error UI
 - `[x]` Room link copy polish
@@ -397,7 +415,7 @@ curl https://ktv-assistant.bradwang1995.workers.dev/api/rooms/<roomId>/snapshot
 curl -X POST https://ktv-assistant.bradwang1995.workers.dev/api/rooms/<roomId>/cleanup
 ```
 
-Remote Step 7/8, Step 8.5, Step 8.6, Step 9.5, production testing docs, search quota polish, candidate selection polish, QR overlay polish, display autoplay follow-up, and playback-quality persistence were updated through 2026-06-26. Latest main Worker + Assets deploy version: `369207c2-9359-4b4d-914c-937c4e0f4729`; production smoke room: `136v4j2p`.
+Remote Step 7/8, Step 8.5, Step 8.6, Step 9.5, production testing docs, search quota polish, candidate selection polish, QR overlay polish, display autoplay follow-up, playback-quality persistence, and the first internal-test fix pass were updated through 2026-07-02. Latest deployed Worker versions should be checked after the next deploy; previous main Worker + Assets deploy version: `369207c2-9359-4b4d-914c-937c4e0f4729`; previous production smoke room: `136v4j2p`.
 
 ## Notes
 

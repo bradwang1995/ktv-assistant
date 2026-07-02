@@ -1,6 +1,6 @@
 # Production 测试指南 / Production Testing Guide
 
-Last updated: 2026-06-26
+Last updated: 2026-07-02
 
 ## 中文版
 
@@ -76,12 +76,13 @@ https://ktv-assistant.bradwang1995.workers.dev/room/<roomId>/mobile
 8. 搜索结果预期：
 
 - 搜索结果来自后端 `/api/rooms/:roomId/search`。
-- 最多显示 8 条结果。
-- 前排结果优先匹配搜索的歌名本身；相关歌曲、同歌手歌曲和频道命中应排在后面。
-- 候选卡片里能看到 YouTube 预览 iframe。
+- 默认先显示 8 条结果；滚动到底部后从当前响应缓存继续加载更多，最多 40 条，不应触发新的 search API call。
+- 可以选择 `歌名 / 歌手`，也可以打开或关闭 `带原唱`。
+- 前排结果优先匹配搜索的歌名或歌手本身；`带原唱` 会影响 lyric/MV/歌词结果排序，但不应压过歌名/歌手匹配。
+- 同一时间只有一个候选卡片挂载 YouTube 预览 iframe，其他候选显示封面。
 - 点选某个候选视频后，它会有选中态。
 - 直接点击或播放候选视频预览时，也会先选中该候选。
-- 点击点歌按钮后，会进入歌单 tab。
+- 点击点歌按钮后仍停留在搜索页，并显示已加入播放列表的成功反馈。
 
 9. 刷新 mobile 页面。
 10. 预期：
@@ -102,6 +103,7 @@ https://ktv-assistant.bradwang1995.workers.dev/room/<roomId>/mobile
 - 当前播放的第一首不会被打断。
 - 第二首会出现在即将播放队列里。
 - 手机页和大屏页都会无刷新同步。
+- 切到手机页歌单 tab 后，可以用 `重唱` 让当前歌曲从头播放，也可以用 `切歌` 跳到下一首。
 
 ## 中文 2. 大屏 YouTube 播放器测试
 
@@ -158,7 +160,9 @@ Invoke-RestMethod -Uri "$base/api/rooms/$roomId/snapshot" | ConvertTo-Json -Dept
 ```powershell
 $body = @{
   query = "后来"
-  limit = 8
+  limit = 40
+  searchType = "song"
+  includeOriginalVocal = $false
   cacheFill = $false
 } | ConvertTo-Json
 
@@ -174,10 +178,22 @@ Invoke-RestMethod `
 
 - HTTP 请求成功。
 - 返回里有 `query`、`normalizedQuery`、`cached`、`results`。
-- `results` 有 0 到 8 条。
+- `results` 有 0 到 40 条。
 - 如果 `YOUTUBE_API_KEY` 已配置，结果应该是真实 YouTube 搜索结果。
 
 快速测试时建议用 `cacheFill = $false`，跳过冷缓存填充。正常用户搜索的冷缓存填充默认最多消耗 1 次 YouTube `search.list` call，并缓存最多 50 条候选结果。
+
+歌手 / 带原唱 smoke test 可以把 body 改成：
+
+```powershell
+$body = @{
+  query = "周杰伦"
+  limit = 40
+  searchType = "artist"
+  includeOriginalVocal = $true
+  cacheFill = $false
+} | ConvertTo-Json
+```
 
 默认推荐 smoke test：
 
@@ -291,6 +307,26 @@ ws.send(JSON.stringify({
 - 下一首 queued 歌变成 `playing`。
 - 如果没有下一首，`playback.playerState` 变成 `"idle"`。
 
+模拟重唱当前歌曲：
+
+```js
+const current = latestMessage.payload.queue.find((item) => item.status === "playing");
+
+ws.send(JSON.stringify({
+  type: "RESTART_CURRENT_ITEM",
+  payload: {
+    queueItemId: current.id,
+    videoId: current.videoId,
+  },
+}));
+```
+
+预期：
+
+- 当前歌曲仍然是同一首。
+- `playback.playerState` 变回 `"loading"`。
+- display 页收到更新后应从头播放当前歌曲。
+
 ## 中文 5. Debug 页和 Cleanup 测试
 
 打开：
@@ -362,7 +398,8 @@ Invoke-RestMethod `
 - `/create` 可以创建真实房间。
 - Display 和 mobile URL 都在 `workers.dev` 域名下。
 - 手机页搜索能返回可用结果。
-- 手机页点歌后，大屏无需刷新就更新。
+- 手机页点歌后停留在搜索页，大屏无需刷新就更新。
+- 手机页歌单 tab 可以远程切歌和重唱。
 - 同一个 room 的两个客户端能同步。
 - 大屏 `开始 K 歌` 能启动 YouTube 播放。
 - YouTube 播放开始后，房间状态反映 `PLAYER_STARTED`。
@@ -459,12 +496,13 @@ https://ktv-assistant.bradwang1995.workers.dev/room/<roomId>/mobile
 8. Expected search behavior:
 
 - Results come from the backend `/api/rooms/:roomId/search` route.
-- Up to 8 results are shown.
-- Top results prioritize the searched song title itself; related songs, same-artist songs, and channel-only matches should rank lower.
-- Candidate cards show YouTube preview iframes.
+- The first 8 results are shown by default; scrolling to the bottom loads more from the current response cache, up to 40, without another search API call.
+- Users can choose `歌名 / 歌手` and toggle `带原唱`.
+- Top results prioritize the searched song title or artist itself; `带原唱` affects lyric/MV/lyrics ranking but should not outrank song/artist match.
+- Only one candidate card mounts a YouTube preview iframe at a time; inactive candidates show thumbnails.
 - Selecting a candidate highlights it.
 - Tapping or playing a candidate preview iframe should select that candidate first.
-- Tapping the add-song button moves you to the queue tab.
+- Tapping the add-song button keeps you on the search tab and shows added-to-queue feedback.
 
 9. Refresh the mobile page.
 10. Expected behavior:
@@ -485,6 +523,7 @@ https://ktv-assistant.bradwang1995.workers.dev/room/<roomId>/mobile
 - The current song is not interrupted.
 - The second song appears as upcoming.
 - Queue changes sync to both display and mobile without refresh.
+- On the mobile queue tab, `重唱` restarts the current song and `切歌` advances to the next song.
 
 ## English 2. Display Player Test
 
@@ -541,7 +580,9 @@ Search smoke test:
 ```powershell
 $body = @{
   query = "后来"
-  limit = 8
+  limit = 40
+  searchType = "song"
+  includeOriginalVocal = $false
   cacheFill = $false
 } | ConvertTo-Json
 
@@ -557,10 +598,22 @@ Expected:
 
 - HTTP request succeeds.
 - Response includes `query`, `normalizedQuery`, `cached`, and `results`.
-- `results` has 0 to 8 items.
+- `results` has 0 to 40 items.
 - With `YOUTUBE_API_KEY` configured, results should be real YouTube results.
 
 Use `cacheFill = $false` for quick tests to skip cold cache fill. Normal user searches default to at most 1 YouTube `search.list` call and up to 50 cached candidate results.
+
+Artist / original-vocal smoke body:
+
+```powershell
+$body = @{
+  query = "周杰伦"
+  limit = 40
+  searchType = "artist"
+  includeOriginalVocal = $true
+  cacheFill = $false
+} | ConvertTo-Json
+```
 
 Default recommendations smoke test:
 
@@ -674,6 +727,26 @@ Expected:
 - The next queued item becomes `playing`.
 - If no queued item exists, `playback.playerState` becomes `"idle"`.
 
+Restart the current song:
+
+```js
+const current = latestMessage.payload.queue.find((item) => item.status === "playing");
+
+ws.send(JSON.stringify({
+  type: "RESTART_CURRENT_ITEM",
+  payload: {
+    queueItemId: current.id,
+    videoId: current.videoId,
+  },
+}));
+```
+
+Expected:
+
+- The current item remains the same.
+- `playback.playerState` changes back to `"loading"`.
+- The display page should restart the current video from the beginning.
+
 ## English 5. Debug Page And Cleanup Test
 
 Open:
@@ -745,7 +818,8 @@ A production test pass means:
 - `/create` creates a real room.
 - Display and mobile URLs both use `workers.dev`.
 - Mobile search returns usable results.
-- Adding songs from mobile updates display without refresh.
+- Adding songs from mobile keeps the search page open and updates display without refresh.
+- Mobile queue can remotely skip and restart the current song.
 - Two clients in the same room stay synchronized.
 - Display `开始 K 歌` starts YouTube playback.
 - `PLAYER_STARTED` is reflected in the room after playback starts.

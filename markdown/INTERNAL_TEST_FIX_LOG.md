@@ -47,7 +47,14 @@
 - 2026-07-02 search controls/cache/persistence/ranking group:
   - `npm run typecheck` passed.
   - `npm run test -- worker/searchFamily.test.ts worker/scoring.test.ts` passed.
+- 2026-07-02 full verification:
+  - `npm run typecheck` passed.
+  - `npm run test` passed: 11 test files, 41 tests.
+  - `npm run build` passed.
 
 ## Commit Log
 
-- Pending.
+- `4c08ec1` - `Add mobile playback controls`
+- `f991c7b` - `Improve mobile entry and previews`
+- `bc39cb1` - `Expand mobile search controls`
+- Documentation/verification commit pending.

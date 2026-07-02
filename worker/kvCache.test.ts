@@ -33,8 +33,8 @@ class MemoryKv {
 }
 
 describe("KV search cache", () => {
-  it("builds stable v2 cache keys", () => {
-    expect(searchCacheFamilyKey("abc123")).toBe("yt-search:v2:abc123:CA:zh-Hans");
+  it("builds stable v3 cache keys", () => {
+    expect(searchCacheFamilyKey("abc123")).toBe("yt-search:v3:abc123:CA:zh-Hans");
     expect(searchCacheIndexKey("later ktv")).toBe("yt-search-index:v1:later ktv:CA:zh-Hans");
   });
 
@@ -52,6 +52,8 @@ describe("KV search cache", () => {
     expect(written?.stats.youtubeSearchCalls).toBe(1);
     expect(written?.results).toHaveLength(6);
     expect(cached?.entry.queryFamily.hash).toBe(family.hash);
+    expect(cached?.entry.queryFamily.searchType).toBe("song");
+    expect(cached?.entry.queryFamily.includeOriginalVocal).toBe(false);
     expect(cached?.entry.results).toHaveLength(6);
     expect(kv.values.has(searchCacheFamilyKey(family.hash))).toBe(true);
   });
