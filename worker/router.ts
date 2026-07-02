@@ -11,9 +11,11 @@ import { checkRateLimit } from "./rateLimit";
 import { createRoomId, isValidRoomId } from "./roomIds";
 import { getSearchRecommendations, searchVideos } from "./searchService";
 import type { Env } from "./types";
+import type { SearchType } from "../src/types/youtube";
 
 const CREATE_ROOM_ATTEMPTS = 3;
 const DEFAULT_SEARCH_RATE_LIMIT_PER_MINUTE = 20;
+const MAX_SEARCH_RESPONSE_LIMIT = 40;
 
 export async function handleApiRequest(request: Request, env: Env) {
   const url = new URL(request.url);
@@ -183,6 +185,8 @@ async function searchRoomVideos(request: Request, env: Env, roomId: string) {
   }
 
   const artist = typeof body.artist === "string" ? body.artist.trim() : undefined;
+  const searchType = normalizeSearchType(body.searchType);
+  const includeOriginalVocal = body.includeOriginalVocal === true;
 
   if (artist && artist.length > 100) {
     return apiError(400, "ARTIST_TOO_LONG", "Artist must be 100 characters or fewer.");
@@ -218,6 +222,8 @@ async function searchRoomVideos(request: Request, env: Env, roomId: string) {
       await searchVideos({
         query,
         artist: artist || undefined,
+        searchType,
+        includeOriginalVocal,
         limit,
         cacheFill,
         env,
@@ -310,7 +316,14 @@ function matchApiRoute(pathname: string) {
 
 function isSearchRequestBody(
   value: unknown,
-): value is { query: string; limit?: number; artist?: string; cacheFill?: boolean } {
+): value is {
+  query: string;
+  limit?: number;
+  artist?: string;
+  cacheFill?: boolean;
+  searchType?: unknown;
+  includeOriginalVocal?: unknown;
+} {
   return (
     typeof value === "object" &&
     value !== null &&
@@ -324,7 +337,11 @@ function clampLimit(limit: number | undefined) {
     return 8;
   }
 
-  return Math.min(Math.max(Math.floor(limit), 1), 8);
+  return Math.min(Math.max(Math.floor(limit), 1), MAX_SEARCH_RESPONSE_LIMIT);
+}
+
+function normalizeSearchType(value: unknown): SearchType {
+  return value === "artist" ? "artist" : "song";
 }
 
 function getSearchRateLimitPerMinute(env: Env) {

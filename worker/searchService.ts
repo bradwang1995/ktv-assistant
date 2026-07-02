@@ -1,4 +1,4 @@
-import type { SearchResponse } from "../src/types/youtube";
+import type { SearchResponse, SearchType } from "../src/types/youtube";
 import {
   DEFAULT_SEARCH_CACHE_MAX_ENTRY_BYTES,
   DEFAULT_SEARCH_CACHE_TTL_SECONDS,
@@ -21,6 +21,8 @@ const DEFAULT_YOUTUBE_SEARCH_CALLS_PER_FILL = 1;
 interface SearchVideosOptions {
   query: string;
   artist?: string;
+  searchType?: SearchType;
+  includeOriginalVocal?: boolean;
   limit?: number;
   cacheFill?: boolean;
   env: Env;
@@ -29,11 +31,13 @@ interface SearchVideosOptions {
 export async function searchVideos({
   query,
   artist,
+  searchType = "song",
+  includeOriginalVocal = false,
   limit = 8,
   cacheFill = true,
   env,
 }: SearchVideosOptions): Promise<SearchResponse> {
-  const family = buildSearchQueryFamily(query, artist);
+  const family = buildSearchQueryFamily(query, artist, { searchType, includeOriginalVocal });
   const cached = await readSearchCache(env.SEARCH_CACHE, family);
   const cacheTtlSeconds = getSearchCacheTtlSeconds(env);
 
@@ -44,8 +48,14 @@ export async function searchVideos({
       {
         query,
         normalizedQuery: cached.entry.normalizedQuery,
+        searchType,
+        includeOriginalVocal,
         cached: true,
-        results: rankSearchResultsForQuery(cached.entry.results, query),
+        results: rankSearchResultsForQuery(cached.entry.results, query, {
+          searchType,
+          includeOriginalVocal,
+          artist,
+        }),
         cacheMeta: {
           sourceQueryCount: cached.entry.stats.youtubeSearchCalls,
           cachedResultCount: cached.entry.results.length,
@@ -63,11 +73,17 @@ export async function searchVideos({
     ? await searchLiveVideos({
         query,
         artist,
+        searchType,
+        includeOriginalVocal,
         limit,
         cacheFill,
         env,
       })
-    : searchMockVideos(query, limit);
+    : {
+        ...searchMockVideos(query, limit),
+        searchType,
+        includeOriginalVocal,
+      };
 
   const cachedEntry = await writeSearchCache(env.SEARCH_CACHE, family, response, {
     ttlSeconds: cacheTtlSeconds,
@@ -118,12 +134,16 @@ export async function getSearchRecommendations({
 async function searchLiveVideos({
   query,
   artist,
+  searchType,
+  includeOriginalVocal,
   limit,
   cacheFill,
   env,
 }: {
   query: string;
   artist?: string;
+  searchType: SearchType;
+  includeOriginalVocal: boolean;
   limit: number;
   cacheFill: boolean;
   env: Env;
@@ -134,11 +154,13 @@ async function searchLiveVideos({
   const maxSearchCalls = Math.min(perFillBudget, remainingBefore);
 
   if (maxSearchCalls <= 0) {
-    const family = buildSearchQueryFamily(query, artist);
+    const family = buildSearchQueryFamily(query, artist, { searchType, includeOriginalVocal });
 
     return {
       query,
       normalizedQuery: family.normalizedQuery,
+      searchType,
+      includeOriginalVocal,
       cached: false,
       results: [],
       cacheMeta: {
@@ -160,6 +182,8 @@ async function searchLiveVideos({
   const response = await searchYouTubeVideos({
     query,
     artist,
+    searchType,
+    includeOriginalVocal,
     apiKey: env.YOUTUBE_API_KEY ?? "",
     maxSearchCalls,
     targetResultCount,

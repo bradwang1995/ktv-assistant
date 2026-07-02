@@ -1,3 +1,5 @@
+export type SearchType = "song" | "artist";
+
 export interface VideoSearchResult {
   videoId: string;
   title: string;
@@ -12,6 +14,8 @@ export interface VideoSearchResult {
 export interface SearchResponse {
   query: string;
   normalizedQuery: string;
+  searchType?: SearchType;
+  includeOriginalVocal?: boolean;
   cached: boolean;
   results: VideoSearchResult[];
   cacheMeta?: {

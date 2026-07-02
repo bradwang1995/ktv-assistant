@@ -1,6 +1,6 @@
 import type { ApiErrorResponse, CreateRoomResponse } from "../types/api";
 import type { RoomSnapshot } from "../types/room";
-import type { SearchResponse } from "../types/youtube";
+import type { SearchResponse, SearchType } from "../types/youtube";
 
 export class ApiClientError extends Error {
   status: number;
@@ -50,7 +50,7 @@ export async function searchVideosViaApi(
   roomId: string,
   query: string,
   limit = 8,
-  options: { cacheFill?: boolean } = {},
+  options: { cacheFill?: boolean; searchType?: SearchType; includeOriginalVocal?: boolean } = {},
 ) {
   const response = await fetch(`/api/rooms/${roomId}/search`, {
     method: "POST",
@@ -62,6 +62,10 @@ export async function searchVideosViaApi(
       query,
       limit,
       ...(typeof options.cacheFill === "boolean" ? { cacheFill: options.cacheFill } : {}),
+      ...(options.searchType ? { searchType: options.searchType } : {}),
+      ...(typeof options.includeOriginalVocal === "boolean"
+        ? { includeOriginalVocal: options.includeOriginalVocal }
+        : {}),
     }),
   });
 

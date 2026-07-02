@@ -18,4 +18,26 @@ describe("search query families", () => {
     expect(family.sourceQueries[0]).toContain("later ktv|later karaoke");
     expect(family.sourceQueries[0]).toContain("artist later ktv");
   });
+
+  it("separates original-vocal searches from karaoke searches", () => {
+    const karaoke = buildSearchQueryFamily("Later");
+    const original = buildSearchQueryFamily("Later", undefined, {
+      includeOriginalVocal: true,
+    });
+
+    expect(original.hash).not.toBe(karaoke.hash);
+    expect(original.normalizedQuery).toBe("later lyric video");
+    expect(original.sourceQueries[0]).toContain("later lyric video");
+  });
+
+  it("builds artist-mode source queries", () => {
+    const family = buildSearchQueryFamily("Jay Chou", undefined, {
+      searchType: "artist",
+    });
+
+    expect(family.searchType).toBe("artist");
+    expect(family.normalizedQuery).toBe("jay chou ktv");
+    expect(family.sourceQueries[0]).toContain("jay chou ktv");
+    expect(family.sourceQueries[0]).toContain("jay chou karaoke");
+  });
 });

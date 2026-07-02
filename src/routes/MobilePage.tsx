@@ -12,7 +12,7 @@ import {
   WifiOff,
 } from "lucide-react";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { KeyboardEvent, ReactNode } from "react";
 import { useParams, useSearchParams } from "react-router-dom";
 import { ConfirmDialog } from "../components/ConfirmDialog";
@@ -33,9 +33,11 @@ import { youtubeEmbedUrl, youtubeThumbnailUrl } from "../lib/youtube";
 import { useMobileUiStore } from "../stores/mobileUiStore";
 import type { QueueItem } from "../types/room";
 import type { ClientToServerMessage } from "../types/websocket";
-import type { VideoSearchResult } from "../types/youtube";
+import type { SearchResponse, SearchType, VideoSearchResult } from "../types/youtube";
 
-const SEARCH_RESULT_LIMIT = 8;
+const SEARCH_RESULT_PAGE_SIZE = 8;
+const SEARCH_FETCH_LIMIT = 40;
+const SEARCH_STATE_TTL_MS = 1000 * 60 * 60 * 24;
 type MobileTab = "search" | "queue";
 
 export default function MobilePage() {
@@ -179,13 +181,35 @@ function SearchTab({
   canUseLocalFallback: boolean;
   sendRoomMessage: (message: ClientToServerMessage) => boolean;
 }) {
-  const [query, setQuery] = useState("");
-  const [selected, setSelected] = useState<VideoSearchResult | null>(null);
+  const [initialSearchState] = useState(() => readPersistedSearchState(roomId));
+  const [query, setQuery] = useState(initialSearchState?.query ?? "");
+  const [searchType, setSearchType] = useState<SearchType>(
+    initialSearchState?.searchType ?? "song",
+  );
+  const [includeOriginalVocal, setIncludeOriginalVocal] = useState(
+    initialSearchState?.includeOriginalVocal ?? false,
+  );
+  const [searchResponse, setSearchResponse] = useState<SearchResponse | null>(
+    initialSearchState?.response ?? null,
+  );
+  const [visibleResultCount, setVisibleResultCount] = useState(
+    clampVisibleResultCount(initialSearchState?.visibleResultCount),
+  );
+  const [selected, setSelected] = useState<VideoSearchResult | null>(() =>
+    findPersistedResult(initialSearchState?.response, initialSearchState?.selectedVideoId),
+  );
   const [actionError, setActionError] = useState<string | null>(null);
   const [actionSuccess, setActionSuccess] = useState<string | null>(null);
   const [recentlyAddedVideoId, setRecentlyAddedVideoId] = useState<string | null>(null);
   const [duplicateCandidate, setDuplicateCandidate] = useState<VideoSearchResult | null>(null);
-  const [activePreviewVideoId, setActivePreviewVideoId] = useState<string | null>(null);
+  const [activePreviewVideoId, setActivePreviewVideoId] = useState(
+    findPersistedResult(initialSearchState?.response, initialSearchState?.activePreviewVideoId)
+      ?.videoId ?? null,
+  );
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
+  const [scrollY, setScrollY] = useState(initialSearchState?.scrollY ?? 0);
+  const loadMoreRef = useRef<HTMLDivElement | null>(null);
+  const restoredScrollRef = useRef(false);
 
   useEffect(() => {
     if (!recentlyAddedVideoId) {
@@ -204,10 +228,12 @@ function SearchTab({
     queryKey: ["search-recommendations", roomId],
     queryFn: async () => {
       try {
-        return await searchVideosViaApi(roomId, "", SEARCH_RESULT_LIMIT, { cacheFill: false });
+        return await searchVideosViaApi(roomId, "", SEARCH_RESULT_PAGE_SIZE, {
+          cacheFill: false,
+        });
       } catch (error) {
         if (canUseLocalFallback) {
-          return searchMockVideos("经典 KTV", SEARCH_RESULT_LIMIT);
+          return searchMockVideos("经典 KTV", SEARCH_RESULT_PAGE_SIZE);
         }
 
         throw error;
@@ -221,10 +247,16 @@ function SearchTab({
   const searchMutation = useMutation({
     mutationFn: async (nextQuery: string) => {
       try {
-        return await searchVideosViaApi(roomId, nextQuery.trim(), SEARCH_RESULT_LIMIT);
+        return await searchVideosViaApi(roomId, nextQuery.trim(), SEARCH_FETCH_LIMIT, {
+          searchType,
+          includeOriginalVocal,
+        });
       } catch (error) {
         if (canUseLocalFallback) {
-          return searchMockVideos(nextQuery, SEARCH_RESULT_LIMIT);
+          return searchMockVideos(nextQuery, SEARCH_FETCH_LIMIT, {
+            searchType,
+            includeOriginalVocal,
+          });
         }
 
         throw error;
@@ -232,14 +264,27 @@ function SearchTab({
     },
     onSuccess: (response) => {
       setActionError(null);
+      setSearchResponse(response);
+      setVisibleResultCount(SEARCH_RESULT_PAGE_SIZE);
+      setActivePreviewVideoId(null);
       setSelected(response.results[0] ?? null);
     },
   });
 
   const activeResults = useMemo(
-    () => searchMutation.data?.results ?? recommendationsQuery.data?.results ?? [],
-    [recommendationsQuery.data?.results, searchMutation.data?.results],
+    () => searchResponse?.results ?? recommendationsQuery.data?.results ?? [],
+    [recommendationsQuery.data?.results, searchResponse?.results],
   );
+  const visibleResults = useMemo(
+    () =>
+      searchResponse
+        ? activeResults.slice(0, Math.min(visibleResultCount, SEARCH_FETCH_LIMIT))
+        : activeResults,
+    [activeResults, searchResponse, visibleResultCount],
+  );
+  const canLoadMore =
+    Boolean(searchResponse) &&
+    visibleResults.length < Math.min(activeResults.length, SEARCH_FETCH_LIMIT);
   const resultSignature = useMemo(
     () => activeResults.map((result) => result.videoId).join(","),
     [activeResults],
@@ -258,6 +303,104 @@ function SearchTab({
     );
   }, [activeResults, resultSignature]);
 
+  const loadMoreResults = useCallback(() => {
+    if (!canLoadMore || isLoadingMore) {
+      return;
+    }
+
+    setIsLoadingMore(true);
+    window.setTimeout(() => {
+      setVisibleResultCount((current) =>
+        Math.min(current + SEARCH_RESULT_PAGE_SIZE, activeResults.length, SEARCH_FETCH_LIMIT),
+      );
+      setIsLoadingMore(false);
+    }, 260);
+  }, [activeResults.length, canLoadMore, isLoadingMore]);
+
+  useEffect(() => {
+    if (!canLoadMore || isLoadingMore) {
+      return;
+    }
+
+    const node = loadMoreRef.current;
+
+    if (!node || !("IntersectionObserver" in window)) {
+      return;
+    }
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((entry) => entry.isIntersecting)) {
+          loadMoreResults();
+        }
+      },
+      { rootMargin: "240px 0px" },
+    );
+
+    observer.observe(node);
+
+    return () => observer.disconnect();
+  }, [canLoadMore, isLoadingMore, loadMoreResults]);
+
+  useEffect(() => {
+    if (!initialSearchState?.scrollY || restoredScrollRef.current || !searchResponse) {
+      return;
+    }
+
+    restoredScrollRef.current = true;
+    window.requestAnimationFrame(() => {
+      window.scrollTo({ top: initialSearchState.scrollY });
+    });
+  }, [initialSearchState, searchResponse]);
+
+  useEffect(() => {
+    let frameId: number | null = null;
+
+    const handleScroll = () => {
+      if (frameId !== null) {
+        return;
+      }
+
+      frameId = window.requestAnimationFrame(() => {
+        frameId = null;
+        setScrollY(window.scrollY);
+      });
+    };
+
+    window.addEventListener("scroll", handleScroll, { passive: true });
+
+    return () => {
+      if (frameId !== null) {
+        window.cancelAnimationFrame(frameId);
+      }
+
+      window.removeEventListener("scroll", handleScroll);
+    };
+  }, []);
+
+  useEffect(() => {
+    writePersistedSearchState(roomId, {
+      query,
+      searchType,
+      includeOriginalVocal,
+      response: searchResponse,
+      visibleResultCount,
+      selectedVideoId: selected?.videoId ?? null,
+      activePreviewVideoId,
+      scrollY,
+    });
+  }, [
+    activePreviewVideoId,
+    includeOriginalVocal,
+    query,
+    roomId,
+    scrollY,
+    searchResponse,
+    searchType,
+    selected?.videoId,
+    visibleResultCount,
+  ]);
+
   const submitSearch = (event: FormEvent) => {
     event.preventDefault();
     const nextQuery = query.trim();
@@ -269,6 +412,9 @@ function SearchTab({
     setActionError(null);
     setActionSuccess(null);
     setDuplicateCandidate(null);
+    setSearchResponse(null);
+    setVisibleResultCount(SEARCH_RESULT_PAGE_SIZE);
+    setSelected(null);
     setActivePreviewVideoId(null);
     searchMutation.mutate(nextQuery);
   };
@@ -317,37 +463,64 @@ function SearchTab({
     setDuplicateCandidate(null);
   };
 
-  const showingRecommendations = !searchMutation.data;
+  const showingRecommendations = !searchResponse;
   const isLoadingResults =
     searchMutation.isPending || (showingRecommendations && recommendationsQuery.isPending);
 
   return (
     <section className="flex-1 px-4 py-4">
-      <form onSubmit={submitSearch} className="flex gap-2">
-        <label className="sr-only" htmlFor="song-search">
-          搜索歌曲
-        </label>
-        <input
-          id="song-search"
-          value={query}
-          onChange={(event) => {
-            setQuery(event.target.value);
+      <form onSubmit={submitSearch} className="grid gap-3">
+        <div className="grid grid-cols-[6.5rem_1fr] gap-2 sm:grid-cols-[7rem_1fr_auto]">
+          <label className="sr-only" htmlFor="search-type">
+            搜索类型
+          </label>
+          <select
+            id="search-type"
+            value={searchType}
+            onChange={(event) => setSearchType(event.target.value as SearchType)}
+            className="rounded-lg border border-slate-300 bg-white px-3 py-3 text-base font-semibold text-slate-800 outline-none transition focus:border-teal-500 focus:ring-4 focus:ring-teal-100"
+          >
+            <option value="song">歌名</option>
+            <option value="artist">歌手</option>
+          </select>
+          <label className="sr-only" htmlFor="song-search">
+            搜索歌曲
+          </label>
+          <input
+            id="song-search"
+            value={query}
+            onChange={(event) => {
+              setQuery(event.target.value);
 
-            if (!event.target.value.trim()) {
-              searchMutation.reset();
-            }
-          }}
-          placeholder="请输入歌名"
-          className="min-w-0 flex-1 rounded-lg border border-slate-300 bg-white px-3 py-3 text-base outline-none transition placeholder:text-slate-400 focus:border-teal-500 focus:ring-4 focus:ring-teal-100"
-        />
-        <button
-          type="submit"
-          disabled={!query.trim() || searchMutation.isPending}
-          className="inline-flex shrink-0 items-center justify-center gap-2 rounded-lg bg-slate-950 px-4 py-3 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-300"
-        >
-          <Search size={18} />
-          搜索
-        </button>
+              if (!event.target.value.trim()) {
+                searchMutation.reset();
+                setSearchResponse(null);
+                setVisibleResultCount(SEARCH_RESULT_PAGE_SIZE);
+                setSelected(null);
+                setActivePreviewVideoId(null);
+              }
+            }}
+            placeholder={searchType === "artist" ? "请输入歌手名" : "请输入歌名"}
+            className="min-w-0 rounded-lg border border-slate-300 bg-white px-3 py-3 text-base outline-none transition placeholder:text-slate-400 focus:border-teal-500 focus:ring-4 focus:ring-teal-100"
+          />
+          <button
+            type="submit"
+            disabled={!query.trim() || searchMutation.isPending}
+            className="col-span-2 inline-flex shrink-0 items-center justify-center gap-2 rounded-lg bg-slate-950 px-4 py-3 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-300 sm:col-span-1"
+          >
+            <Search size={18} />
+            搜索
+          </button>
+        </div>
+        <label className="inline-flex items-center justify-between gap-3 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-semibold text-slate-700">
+          <span>带原唱</span>
+          <input
+            type="checkbox"
+            checked={includeOriginalVocal}
+            onChange={(event) => setIncludeOriginalVocal(event.target.checked)}
+            className="h-5 w-5 rounded border-slate-300 text-teal-600 focus:ring-teal-500"
+          />
+        </label>
       </form>
 
       {searchMutation.isError ? (
@@ -382,7 +555,7 @@ function SearchTab({
         </div>
       ) : null}
 
-      {!isLoadingResults && searchMutation.data && activeResults.length === 0 ? (
+      {!isLoadingResults && searchResponse && activeResults.length === 0 ? (
         <StatusMessage tone="info" className="mt-5">
           没有找到合适的视频。
         </StatusMessage>
@@ -394,20 +567,22 @@ function SearchTab({
         </StatusMessage>
       ) : null}
 
-      {activeResults.length > 0 ? (
+      {!isLoadingResults && activeResults.length > 0 ? (
         <>
           <div className="mt-5 flex items-center justify-between gap-3">
             <h2 className="text-sm font-semibold text-slate-700">
               {showingRecommendations ? "缓存推荐" : "搜索结果"}
             </h2>
             <span className="rounded-md bg-slate-100 px-2 py-1 text-xs text-slate-600">
-              {activeResults.length} 首
+              {showingRecommendations
+                ? `${activeResults.length} 首`
+                : `${visibleResults.length}/${activeResults.length} 首`}
             </span>
           </div>
           <div className="mt-5 grid gap-4 sm:grid-cols-2">
-            {activeResults.map((result) => (
+            {visibleResults.map((result, index) => (
               <CandidateVideoCard
-                key={result.videoId}
+                key={`${result.videoId}-${index}`}
                 result={result}
                 selected={selected?.videoId === result.videoId}
                 previewActive={activePreviewVideoId === result.videoId}
@@ -421,6 +596,23 @@ function SearchTab({
               />
             ))}
           </div>
+          {searchResponse ? (
+            <div ref={loadMoreRef} className="mt-4 min-h-12">
+              {isLoadingMore ? (
+                <StatusMessage tone="loading">正在加载更多缓存结果</StatusMessage>
+              ) : canLoadMore ? (
+                <button
+                  type="button"
+                  onClick={loadMoreResults}
+                  className="w-full rounded-lg border border-slate-200 px-4 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
+                >
+                  加载更多
+                </button>
+              ) : (
+                <p className="py-3 text-center text-xs text-slate-500">已经显示全部缓存结果</p>
+              )}
+            </div>
+          ) : null}
           <div className="sticky bottom-0 -mx-4 mt-4 border-t border-slate-200 bg-white/95 px-4 py-3 backdrop-blur">
             <button
               type="button"
@@ -898,4 +1090,108 @@ function searchErrorMessage(error: unknown) {
   }
 
   return "请稍后再试。";
+}
+
+interface PersistedSearchState {
+  savedAt: number;
+  query: string;
+  searchType: SearchType;
+  includeOriginalVocal: boolean;
+  response: SearchResponse | null;
+  visibleResultCount: number;
+  selectedVideoId: string | null;
+  activePreviewVideoId: string | null;
+  scrollY: number;
+}
+
+function readPersistedSearchState(roomId: string): PersistedSearchState | null {
+  if (!roomId) {
+    return null;
+  }
+
+  try {
+    const raw = window.localStorage.getItem(searchStateStorageKey(roomId));
+
+    if (!raw) {
+      return null;
+    }
+
+    const parsed = JSON.parse(raw) as Partial<PersistedSearchState>;
+
+    if (!parsed.savedAt || Date.now() - parsed.savedAt > SEARCH_STATE_TTL_MS) {
+      return null;
+    }
+
+    return {
+      savedAt: parsed.savedAt,
+      query: typeof parsed.query === "string" ? parsed.query : "",
+      searchType: parsed.searchType === "artist" ? "artist" : "song",
+      includeOriginalVocal: parsed.includeOriginalVocal === true,
+      response: isSearchResponse(parsed.response) ? parsed.response : null,
+      visibleResultCount: clampVisibleResultCount(parsed.visibleResultCount),
+      selectedVideoId:
+        typeof parsed.selectedVideoId === "string" ? parsed.selectedVideoId : null,
+      activePreviewVideoId:
+        typeof parsed.activePreviewVideoId === "string" ? parsed.activePreviewVideoId : null,
+      scrollY:
+        typeof parsed.scrollY === "number" && Number.isFinite(parsed.scrollY)
+          ? Math.max(parsed.scrollY, 0)
+          : 0,
+    };
+  } catch {
+    return null;
+  }
+}
+
+function writePersistedSearchState(
+  roomId: string,
+  state: Omit<PersistedSearchState, "savedAt">,
+) {
+  if (!roomId) {
+    return;
+  }
+
+  try {
+    window.localStorage.setItem(
+      searchStateStorageKey(roomId),
+      JSON.stringify({
+        ...state,
+        visibleResultCount: clampVisibleResultCount(state.visibleResultCount),
+        savedAt: Date.now(),
+      } satisfies PersistedSearchState),
+    );
+  } catch {
+    // localStorage may be unavailable in private browsing or full-quota states.
+  }
+}
+
+function searchStateStorageKey(roomId: string) {
+  return `ktv-assistant:mobile-search:${roomId}`;
+}
+
+function clampVisibleResultCount(value: unknown) {
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    return SEARCH_RESULT_PAGE_SIZE;
+  }
+
+  return Math.min(Math.max(Math.floor(value), SEARCH_RESULT_PAGE_SIZE), SEARCH_FETCH_LIMIT);
+}
+
+function findPersistedResult(response: SearchResponse | null | undefined, videoId: unknown) {
+  if (!response || typeof videoId !== "string") {
+    return null;
+  }
+
+  return response.results.find((result) => result.videoId === videoId) ?? null;
+}
+
+function isSearchResponse(value: unknown): value is SearchResponse {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    "query" in value &&
+    typeof (value as { query?: unknown }).query === "string" &&
+    "results" in value &&
+    Array.isArray((value as { results?: unknown }).results)
+  );
 }

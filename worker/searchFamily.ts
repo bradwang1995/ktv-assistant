@@ -1,4 +1,5 @@
 import { normalizeQuery, normalizeSearchQuery } from "../src/lib/queryNormalize";
+import type { SearchType } from "../src/types/youtube";
 
 const MAX_SOURCE_QUERY_LENGTH = 450;
 
@@ -16,23 +17,44 @@ export interface SearchQueryFamily {
   canonicalQuery: string;
   normalizedQuery: string;
   artist?: string;
+  searchType: SearchType;
+  includeOriginalVocal: boolean;
   aliases: string[];
   sourceQueries: string[];
   hash: string;
 }
 
-export function buildSearchQueryFamily(query: string, artist?: string): SearchQueryFamily {
+export function buildSearchQueryFamily(
+  query: string,
+  artist?: string,
+  options: { searchType?: SearchType; includeOriginalVocal?: boolean } = {},
+): SearchQueryFamily {
+  const searchType = options.searchType ?? "song";
+  const includeOriginalVocal = options.includeOriginalVocal ?? false;
   const canonicalQuery = normalizeSearchFamilyQuery(query);
   const normalizedArtist = normalizeOptionalText(artist);
-  const normalizedQuery = canonicalQuery ? normalizeSearchQuery(canonicalQuery) : normalizeQuery(query);
-  const aliases = buildFamilyAliases(canonicalQuery, normalizedArtist);
-  const sourceQueries = buildSourceQueries(canonicalQuery, aliases, normalizedArtist);
-  const hash = searchFamilyHash(canonicalQuery, normalizedArtist);
+  const normalizedQuery = buildNormalizedQuery(canonicalQuery, searchType, includeOriginalVocal);
+  const aliases = buildFamilyAliases(
+    canonicalQuery,
+    normalizedArtist,
+    searchType,
+    includeOriginalVocal,
+  );
+  const sourceQueries = buildSourceQueries(
+    canonicalQuery,
+    aliases,
+    normalizedArtist,
+    searchType,
+    includeOriginalVocal,
+  );
+  const hash = searchFamilyHash(canonicalQuery, normalizedArtist, searchType, includeOriginalVocal);
 
   return {
     canonicalQuery,
     normalizedQuery,
     ...(normalizedArtist ? { artist: normalizedArtist } : {}),
+    searchType,
+    includeOriginalVocal,
     aliases,
     sourceQueries,
     hash,
@@ -51,8 +73,13 @@ export function normalizeSearchFamilyQuery(query: string) {
   return normalized;
 }
 
-export function searchFamilyHash(canonicalQuery: string, artist?: string) {
-  const input = `${normalizeQuery(canonicalQuery)}|${normalizeOptionalText(artist) ?? ""}`;
+export function searchFamilyHash(
+  canonicalQuery: string,
+  artist?: string,
+  searchType: SearchType = "song",
+  includeOriginalVocal = false,
+) {
+  const input = `${normalizeQuery(canonicalQuery)}|${normalizeOptionalText(artist) ?? ""}|${searchType}|${includeOriginalVocal ? "original" : "karaoke"}`;
   let hash = 0x811c9dc5;
 
   for (let index = 0; index < input.length; index += 1) {
@@ -80,22 +107,42 @@ function normalizeOptionalText(value: string | undefined) {
   return normalized.length > 0 ? normalized : undefined;
 }
 
-function buildFamilyAliases(canonicalQuery: string, artist?: string) {
+function buildNormalizedQuery(
+  canonicalQuery: string,
+  searchType: SearchType,
+  includeOriginalVocal: boolean,
+) {
+  if (!canonicalQuery) {
+    return "";
+  }
+
+  if (searchType === "artist") {
+    return includeOriginalVocal
+      ? `${canonicalQuery} lyric video`
+      : `${canonicalQuery} ktv`;
+  }
+
+  return includeOriginalVocal
+    ? `${canonicalQuery} lyric video`
+    : normalizeSearchQuery(canonicalQuery);
+}
+
+function buildFamilyAliases(
+  canonicalQuery: string,
+  artist: string | undefined,
+  searchType: SearchType,
+  includeOriginalVocal: boolean,
+) {
   if (!canonicalQuery) {
     return [];
   }
 
-  const aliases = [
-    canonicalQuery,
-    normalizeSearchQuery(canonicalQuery),
-    `${canonicalQuery} karaoke`,
-    `${canonicalQuery} \u4f34\u594f`,
-    `${canonicalQuery} \u5361\u62c9OK`,
-    `${canonicalQuery} pinyin karaoke`,
-    `${canonicalQuery} instrumental`,
-  ];
+  const aliases =
+    searchType === "artist"
+      ? buildArtistAliases(canonicalQuery, includeOriginalVocal)
+      : buildSongAliases(canonicalQuery, includeOriginalVocal);
 
-  if (artist) {
+  if (artist && searchType === "song") {
     aliases.push(
       `${artist} ${canonicalQuery} ktv`,
       `${artist} ${canonicalQuery} karaoke`,
@@ -107,13 +154,73 @@ function buildFamilyAliases(canonicalQuery: string, artist?: string) {
   return uniqueNormalized(aliases);
 }
 
-function buildSourceQueries(canonicalQuery: string, aliases: string[], artist?: string) {
+function buildSongAliases(canonicalQuery: string, includeOriginalVocal: boolean) {
+  if (includeOriginalVocal) {
+    return [
+      canonicalQuery,
+      `${canonicalQuery} lyric video`,
+      `${canonicalQuery} lyrics`,
+      `${canonicalQuery} \u6b4c\u8bcd`,
+      `${canonicalQuery} MV`,
+      `${canonicalQuery} original with lyrics`,
+    ];
+  }
+
+  return [
+    canonicalQuery,
+    normalizeSearchQuery(canonicalQuery),
+    `${canonicalQuery} karaoke`,
+    `${canonicalQuery} \u4f34\u594f`,
+    `${canonicalQuery} \u5361\u62c9OK`,
+    `${canonicalQuery} pinyin karaoke`,
+    `${canonicalQuery} instrumental`,
+  ];
+}
+
+function buildArtistAliases(canonicalQuery: string, includeOriginalVocal: boolean) {
+  if (includeOriginalVocal) {
+    return [
+      `${canonicalQuery} lyric video`,
+      `${canonicalQuery} lyrics`,
+      `${canonicalQuery} \u6b4c\u8bcd`,
+      `${canonicalQuery} MV`,
+      `${canonicalQuery} official`,
+      `${canonicalQuery} songs with lyrics`,
+    ];
+  }
+
+  return [
+    `${canonicalQuery} ktv`,
+    `${canonicalQuery} karaoke`,
+    `${canonicalQuery} \u4f34\u594f`,
+    `${canonicalQuery} \u5361\u62c9OK`,
+    `${canonicalQuery} pinyin karaoke`,
+    `${canonicalQuery} classic songs ktv`,
+  ];
+}
+
+function buildSourceQueries(
+  canonicalQuery: string,
+  aliases: string[],
+  artist: string | undefined,
+  searchType: SearchType,
+  includeOriginalVocal: boolean,
+) {
   if (!canonicalQuery) {
     return [];
   }
 
   const broadQuery = joinAliasesForYouTube(aliases.filter((alias) => alias !== canonicalQuery));
-  const fallbackQueries = artist
+  const fallbackQueries = searchType === "artist"
+    ? [
+        includeOriginalVocal
+          ? `${canonicalQuery} lyric video`
+          : `${canonicalQuery} ktv`,
+        includeOriginalVocal
+          ? `${canonicalQuery} songs lyrics`
+          : `${canonicalQuery} karaoke songs`,
+      ]
+    : artist
     ? [
         `${artist} ${canonicalQuery} ktv`,
         `${artist} karaoke`,

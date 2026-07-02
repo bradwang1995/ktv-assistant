@@ -10,13 +10,13 @@
 | IT-01 | P0 | Mobile queue | Add a visible `切歌 / 下一首` control that skips the current song and syncs playback state. | Done |
 | IT-02 | P0 | Mobile queue | Add a `重唱` control that restarts the current song without changing queue order. | Done |
 | IT-03 | P0 | Home page | Make portrait mobile layout clearly show `创建房间` and `扫码点歌`, while making intro panels look non-clickable. | Done |
-| IT-04 | P1 | Search | Add `带原唱` toggle; default off; use it in search query/ranking. | Planned |
-| IT-05 | P1 | Search | Add `歌名 / 歌手` search type selector; default song-title mode. | Planned |
+| IT-04 | P1 | Search | Add `带原唱` toggle; default off; use it in search query/ranking. | Done |
+| IT-05 | P1 | Search | Add `歌名 / 歌手` search type selector; default song-title mode. | Done |
 | IT-06 | P0 | Mobile search | Do not auto-switch to the queue after adding a song; keep search context and show success feedback. | Done |
 | IT-07 | P0 | Search preview | Only one preview may play at once; clicking preview/card selects the result. | Done |
-| IT-08 | P1 | Search results | Support loading more results from the current cached result set, not new API calls. | Planned |
-| IT-09 | P1 | Search state | Persist query, type, original-vocal toggle, result cache, visible count, selected video, and scroll position. | Planned |
-| IT-10 | P2 | Search quality | Improve filtering/ranking for song-title vs artist searches and KTV/original-vocal intent. | Planned |
+| IT-08 | P1 | Search results | Support loading more results from the current cached result set, not new API calls. | Done |
+| IT-09 | P1 | Search state | Persist query, type, original-vocal toggle, result cache, visible count, selected video, and scroll position. | Done |
+| IT-10 | P2 | Search quality | Improve filtering/ranking for song-title vs artist searches and KTV/original-vocal intent. | Done |
 
 ## Implementation Groups
 
@@ -44,6 +44,9 @@
   - `npm run test -- src/lib/roomReducer.test.ts worker/roomCommands.test.ts worker/websocketMessages.test.ts` passed.
 - 2026-07-02 mobile home/preview group:
   - `npm run typecheck` passed.
+- 2026-07-02 search controls/cache/persistence/ranking group:
+  - `npm run typecheck` passed.
+  - `npm run test -- worker/searchFamily.test.ts worker/scoring.test.ts` passed.
 
 ## Commit Log
 

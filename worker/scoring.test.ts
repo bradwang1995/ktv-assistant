@@ -58,4 +58,52 @@ describe("search scoring", () => {
     expect(results[1].reasons).toContain("channel contains query");
     expect(results[0].score).toBeGreaterThan(results[1].score);
   });
+
+  it("rewards lyric-video signals when original vocals are requested", () => {
+    const results = rankSearchResultsForQuery(
+      [
+        {
+          videoId: "karaoke",
+          title: "后来 KTV 伴奏版",
+          channelTitle: "KTV Channel",
+          durationSeconds: 280,
+        },
+        {
+          videoId: "lyrics",
+          title: "后来 lyric video 歌词版",
+          channelTitle: "Official Channel",
+          durationSeconds: 280,
+        },
+      ],
+      "后来",
+      { includeOriginalVocal: true },
+    );
+
+    expect(results[0].videoId).toBe("lyrics");
+    expect(results[0].reasons).toContain("title contains lyric video");
+  });
+
+  it("prioritizes artist metadata in artist search mode", () => {
+    const results = rankSearchResultsForQuery(
+      [
+        {
+          videoId: "other",
+          title: "晴天 KTV 伴奏版",
+          channelTitle: "KTV Channel",
+          durationSeconds: 280,
+        },
+        {
+          videoId: "artist",
+          title: "周杰伦 晴天 KTV",
+          channelTitle: "周杰伦 Official",
+          durationSeconds: 280,
+        },
+      ],
+      "周杰伦",
+      { searchType: "artist" },
+    );
+
+    expect(results[0].videoId).toBe("artist");
+    expect(results[0].reasons.join("; ")).toContain("artist query");
+  });
 });

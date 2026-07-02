@@ -2,7 +2,7 @@ import { normalizeSearchQuery } from "../src/lib/queryNormalize";
 import type { SearchResponse } from "../src/types/youtube";
 import type { SearchQueryFamily } from "./searchFamily";
 
-const SEARCH_CACHE_VERSION = "v2";
+const SEARCH_CACHE_VERSION = "v3";
 const SEARCH_CACHE_INDEX_VERSION = "v1";
 const SEARCH_RECOMMENDATIONS_VERSION = "v1";
 export const DEFAULT_SEARCH_CACHE_TTL_SECONDS = 60 * 60 * 24 * 365;
@@ -43,6 +43,8 @@ export interface SearchCacheEntry {
   queryFamily: {
     canonicalQuery: string;
     artist?: string;
+    searchType: SearchQueryFamily["searchType"];
+    includeOriginalVocal: boolean;
     aliases: string[];
     hash: string;
   };
@@ -232,6 +234,8 @@ function buildSearchCacheEntry({
     queryFamily: {
       canonicalQuery: family.canonicalQuery,
       ...(family.artist ? { artist: family.artist } : {}),
+      searchType: family.searchType,
+      includeOriginalVocal: family.includeOriginalVocal,
       aliases: family.aliases,
       hash: family.hash,
     },

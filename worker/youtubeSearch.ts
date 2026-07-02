@@ -1,4 +1,4 @@
-import type { SearchResponse, VideoSearchResult } from "../src/types/youtube";
+import type { SearchResponse, SearchType, VideoSearchResult } from "../src/types/youtube";
 import { rankSearchResultsForQuery } from "./scoring";
 import { buildSearchQueryFamily } from "./searchFamily";
 
@@ -41,6 +41,8 @@ interface YouTubeVideosListResponse {
 export interface YouTubeSearchOptions {
   query: string;
   artist?: string;
+  searchType?: SearchType;
+  includeOriginalVocal?: boolean;
   apiKey: string;
   maxSearchCalls?: number;
   targetResultCount?: number;
@@ -49,11 +51,13 @@ export interface YouTubeSearchOptions {
 export async function searchYouTubeVideos({
   query,
   artist,
+  searchType = "song",
+  includeOriginalVocal = false,
   apiKey,
   maxSearchCalls = DEFAULT_MAX_SEARCH_CALLS,
   targetResultCount = DEFAULT_TARGET_CACHE_RESULTS,
 }: YouTubeSearchOptions): Promise<SearchResponse> {
-  const family = buildSearchQueryFamily(query, artist);
+  const family = buildSearchQueryFamily(query, artist, { searchType, includeOriginalVocal });
   const dedupedResults = new Map<string, Omit<VideoSearchResult, "score" | "reasons">>();
   const usedSourceQueries: string[] = [];
   let searchCallCount = 0;
@@ -88,11 +92,14 @@ export async function searchYouTubeVideos({
       durationSeconds: durations.get(result.videoId),
     })),
     query,
+    { searchType, includeOriginalVocal, artist },
   );
 
   return {
     query,
     normalizedQuery: family.normalizedQuery,
+    searchType,
+    includeOriginalVocal,
     cached: false,
     results,
     cacheMeta: {

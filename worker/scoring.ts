@@ -1,4 +1,5 @@
 import type { VideoSearchResult } from "../src/types/youtube";
+import type { SearchType } from "../src/types/youtube";
 import { normalizeQuery } from "../src/lib/queryNormalize";
 import { normalizeSearchFamilyQuery } from "./searchFamily";
 
@@ -9,7 +10,13 @@ const TITLE_TOKEN_MATCH_SCORE = 24;
 const CHANNEL_ONLY_QUERY_SCORE = 2;
 const TITLE_MISS_PENALTY = -24;
 
-const POSITIVE_SIGNALS = [
+interface SearchScoringOptions {
+  searchType?: SearchType;
+  includeOriginalVocal?: boolean;
+  artist?: string;
+}
+
+const KARAOKE_POSITIVE_SIGNALS = [
   { text: "ktv", score: 10, reason: "title contains KTV" },
   { text: "\u5361\u62c9ok", score: 10, reason: "title contains karaoke marker" },
   { text: "\u4f34\u594f", score: 8, reason: "title contains instrumental marker" },
@@ -22,30 +29,47 @@ const POSITIVE_SIGNALS = [
   { text: "pinyin", score: 3, reason: "title contains pinyin" },
 ];
 
+const ORIGINAL_VOCAL_POSITIVE_SIGNALS = [
+  { text: "lyric video", score: 12, reason: "title contains lyric video" },
+  { text: "lyrics", score: 10, reason: "title contains lyrics" },
+  { text: "lyric", score: 8, reason: "title contains lyric" },
+  { text: "\u6b4c\u8bcd", score: 10, reason: "title contains lyrics marker" },
+  { text: "歌词", score: 10, reason: "title contains 歌词" },
+  { text: "mv", score: 7, reason: "title contains MV" },
+  { text: "official", score: 5, reason: "title contains official" },
+  { text: "字幕", score: 5, reason: "title contains subtitles marker" },
+  { text: "ktv", score: 3, reason: "title contains KTV fallback" },
+  { text: "karaoke", score: 2, reason: "title contains karaoke fallback" },
+];
+
 const NEGATIVE_SIGNALS = [
   { text: "live", score: -8, reason: "title contains live" },
   { text: "\u73b0\u573a", score: -8, reason: "title contains live marker" },
   { text: "现场", score: -8, reason: "title contains 现场" },
   { text: "reaction", score: -8, reason: "title contains reaction" },
   { text: "cover", score: -6, reason: "title contains cover" },
+  { text: "remix", score: -5, reason: "title contains remix" },
   { text: "tutorial", score: -5, reason: "title contains tutorial" },
   { text: "\u6559\u5b66", score: -5, reason: "title contains tutorial marker" },
   { text: "shorts", score: -5, reason: "title contains shorts" },
-  { text: "lyrics", score: -4, reason: "title contains lyrics" },
   { text: "教学", score: -5, reason: "title contains 教学" },
 ];
 
 export function scoreSearchResult(
   result: Omit<VideoSearchResult, "score" | "reasons">,
   originalQuery: string,
+  options: SearchScoringOptions = {},
 ): VideoSearchResult {
   const haystack = `${result.title} ${result.channelTitle ?? ""}`.toLowerCase();
   const title = normalizeQuery(result.title);
   const channelTitle = normalizeQuery(result.channelTitle ?? "");
   const reasons: string[] = [];
   let score = 0;
+  const positiveSignals = options.includeOriginalVocal
+    ? ORIGINAL_VOCAL_POSITIVE_SIGNALS
+    : KARAOKE_POSITIVE_SIGNALS;
 
-  for (const signal of POSITIVE_SIGNALS) {
+  for (const signal of positiveSignals) {
     if (haystack.includes(signal.text)) {
       score += signal.score;
       reasons.push(signal.reason);
@@ -59,7 +83,10 @@ export function scoreSearchResult(
     }
   }
 
-  const queryMatch = scoreTitleQueryMatch(title, channelTitle, originalQuery);
+  const queryMatch =
+    options.searchType === "artist"
+      ? scoreArtistQueryMatch(title, channelTitle, originalQuery)
+      : scoreTitleQueryMatch(title, channelTitle, originalQuery);
 
   if (queryMatch.score !== 0) {
     score += queryMatch.score;
@@ -83,14 +110,58 @@ export function scoreSearchResult(
 export function rankSearchResultsForQuery(
   results: Array<Omit<VideoSearchResult, "score" | "reasons"> | VideoSearchResult>,
   originalQuery: string,
+  options: SearchScoringOptions = {},
 ): VideoSearchResult[] {
   return results
     .map((result, index) => ({
-      result: scoreSearchResult(result, originalQuery),
+      result: scoreSearchResult(result, originalQuery, options),
       index,
     }))
     .sort((a, b) => b.result.score - a.result.score || a.index - b.index)
     .map(({ result }) => result);
+}
+
+function scoreArtistQueryMatch(title: string, channelTitle: string, originalQuery: string) {
+  const canonicalQuery = normalizeSearchFamilyQuery(originalQuery);
+
+  if (!canonicalQuery) {
+    return { score: 0, reason: "" };
+  }
+
+  const comparableTitle = normalizeSongComparableText(title);
+  const comparableChannel = normalizeSongComparableText(channelTitle);
+  const comparableQuery = normalizeSongComparableText(canonicalQuery);
+  let score = 0;
+  const reasons: string[] = [];
+
+  if (title.includes(canonicalQuery) || comparableTitle.includes(comparableQuery)) {
+    score += 42;
+    reasons.push("title contains artist query");
+  }
+
+  if (channelTitle.includes(canonicalQuery) || comparableChannel.includes(comparableQuery)) {
+    score += 32;
+    reasons.push("channel contains artist query");
+  }
+
+  if (score > 0) {
+    return { score, reason: reasons.join("; ") };
+  }
+
+  const queryTokens = canonicalQuery.split(" ").filter((token) => token.length > 1);
+  const haystack = `${title} ${channelTitle}`;
+
+  if (queryTokens.length > 1 && queryTokens.every((token) => haystack.includes(token))) {
+    return {
+      score: 18,
+      reason: "metadata contains artist query tokens",
+    };
+  }
+
+  return {
+    score: -18,
+    reason: "metadata does not match artist query",
+  };
 }
 
 function scoreTitleQueryMatch(title: string, channelTitle: string, originalQuery: string) {
