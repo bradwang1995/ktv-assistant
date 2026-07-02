@@ -29,7 +29,7 @@ import {
   restartCurrentSong,
   useRoomSnapshot,
 } from "../lib/roomState";
-import { youtubeEmbedUrl } from "../lib/youtube";
+import { youtubeEmbedUrl, youtubeThumbnailUrl } from "../lib/youtube";
 import { useMobileUiStore } from "../stores/mobileUiStore";
 import type { QueueItem } from "../types/room";
 import type { ClientToServerMessage } from "../types/websocket";
@@ -185,6 +185,7 @@ function SearchTab({
   const [actionSuccess, setActionSuccess] = useState<string | null>(null);
   const [recentlyAddedVideoId, setRecentlyAddedVideoId] = useState<string | null>(null);
   const [duplicateCandidate, setDuplicateCandidate] = useState<VideoSearchResult | null>(null);
+  const [activePreviewVideoId, setActivePreviewVideoId] = useState<string | null>(null);
 
   useEffect(() => {
     if (!recentlyAddedVideoId) {
@@ -252,6 +253,9 @@ function SearchTab({
 
       return activeResults[0] ?? null;
     });
+    setActivePreviewVideoId((current) =>
+      current && activeResults.some((result) => result.videoId === current) ? current : null,
+    );
   }, [activeResults, resultSignature]);
 
   const submitSearch = (event: FormEvent) => {
@@ -262,10 +266,11 @@ function SearchTab({
       return;
     }
 
-      setActionError(null);
-      setActionSuccess(null);
-      setDuplicateCandidate(null);
-      searchMutation.mutate(nextQuery);
+    setActionError(null);
+    setActionSuccess(null);
+    setDuplicateCandidate(null);
+    setActivePreviewVideoId(null);
+    searchMutation.mutate(nextQuery);
   };
 
   const addSelectedSong = () => {
@@ -405,10 +410,12 @@ function SearchTab({
                 key={result.videoId}
                 result={result}
                 selected={selected?.videoId === result.videoId}
+                previewActive={activePreviewVideoId === result.videoId}
                 duplicate={existingItems.some((item) => item.videoId === result.videoId)}
                 recentlyAdded={recentlyAddedVideoId === result.videoId}
                 onSelect={() => {
                   setSelected(result);
+                  setActivePreviewVideoId(result.videoId);
                   setActionError(null);
                 }}
               />
@@ -450,12 +457,14 @@ function SearchTab({
 function CandidateVideoCard({
   result,
   selected,
+  previewActive,
   duplicate,
   recentlyAdded,
   onSelect,
 }: {
   result: VideoSearchResult;
   selected: boolean;
+  previewActive: boolean;
   duplicate: boolean;
   recentlyAdded: boolean;
   onSelect: () => void;
@@ -487,14 +496,31 @@ function CandidateVideoCard({
     >
       <div className="p-2 pb-0">
         <div className="aspect-video overflow-hidden rounded-md bg-slate-950">
-          <iframe
-            className="h-full w-full"
-            title={result.title}
-            src={youtubeEmbedUrl(result.videoId, { start: 30, muted: true })}
-            loading="lazy"
-            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
-            allowFullScreen
-          />
+          {previewActive ? (
+            <iframe
+              className="h-full w-full"
+              title={result.title}
+              src={youtubeEmbedUrl(result.videoId, { start: 30, muted: true, autoplay: true })}
+              loading="lazy"
+              allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+              allowFullScreen
+            />
+          ) : (
+            <div className="relative h-full w-full">
+              <img
+                src={result.thumbnailUrl ?? youtubeThumbnailUrl(result.videoId)}
+                alt=""
+                loading="lazy"
+                className="h-full w-full object-cover opacity-85"
+              />
+              <div className="absolute inset-0 grid place-items-center bg-black/20">
+                <span className="inline-flex items-center gap-2 rounded-lg bg-white/90 px-3 py-2 text-sm font-semibold text-slate-950 shadow-sm">
+                  <Play size={16} />
+                  预览
+                </span>
+              </div>
+            </div>
+          )}
         </div>
       </div>
       <div className="px-3 pb-3 pt-3">

@@ -1,4 +1,4 @@
-import { MonitorPlay, Plus, Smartphone } from "lucide-react";
+import { MonitorPlay, Plus, QrCode, Smartphone } from "lucide-react";
 import { useState } from "react";
 import type { ReactNode } from "react";
 import { useNavigate } from "react-router-dom";
@@ -8,11 +8,12 @@ import { createRoomId, hydrateRoomSnapshot, readRoomSnapshot } from "../lib/room
 
 export default function CreateRoomPage() {
   const navigate = useNavigate();
-  const [isCreating, setIsCreating] = useState(false);
+  const [creatingTarget, setCreatingTarget] = useState<"display" | "mobile" | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const isCreating = creatingTarget !== null;
 
-  const createRoom = async () => {
-    setIsCreating(true);
+  const createRoom = async (target: "display" | "mobile") => {
+    setCreatingTarget(target);
     setNotice(null);
 
     try {
@@ -22,7 +23,7 @@ export default function CreateRoomPage() {
         hydrateRoomSnapshot(response.snapshot);
       }
 
-      navigate(response.displayUrl);
+      navigate(target === "display" ? response.displayUrl : response.mobileUrl);
     } catch (error) {
       const roomId = createRoomId();
       readRoomSnapshot(roomId);
@@ -33,9 +34,9 @@ export default function CreateRoomPage() {
         setNotice("后端 API 暂不可用，已使用本地房间继续。");
       }
 
-      navigate(`/room/${roomId}/display`);
+      navigate(target === "display" ? `/room/${roomId}/display` : `/room/${roomId}/mobile`);
     } finally {
-      setIsCreating(false);
+      setCreatingTarget(null);
     }
   };
 
@@ -54,26 +55,37 @@ export default function CreateRoomPage() {
           </div>
         </header>
 
-        <section className="grid flex-1 items-center gap-8 py-10 md:grid-cols-[1fr_0.9fr]">
+        <section className="grid flex-1 items-center gap-8 py-8 md:grid-cols-[1fr_0.9fr] md:py-10">
           <div className="max-w-xl">
             <p className="mb-4 text-sm font-medium text-teal-700">
               开一个房间，朋友扫码点歌
             </p>
-            <h2 className="text-4xl font-semibold leading-tight tracking-normal text-slate-950 sm:text-5xl">
+            <h2 className="text-3xl font-semibold leading-tight tracking-normal text-slate-950 sm:text-5xl">
               大屏播放，手机点歌，一个房间一起唱。
             </h2>
             <p className="mt-5 text-base leading-7 text-slate-600">
               创建房间后，把大屏页面留在电视或电脑上，再让朋友用手机扫码进入同一个房间。
             </p>
-            <button
-              type="button"
-              onClick={createRoom}
-              disabled={isCreating}
-              className="mt-8 inline-flex items-center gap-2 rounded-lg bg-slate-950 px-5 py-3 text-base font-semibold text-white shadow-sm transition hover:bg-slate-800 focus:outline-none focus:ring-4 focus:ring-teal-200 disabled:cursor-not-allowed disabled:bg-slate-400"
-            >
-              <Plus size={20} />
-              {isCreating ? "创建中" : "创建房间"}
-            </button>
+            <div className="mt-8 grid gap-3 sm:grid-cols-2">
+              <button
+                type="button"
+                onClick={() => createRoom("display")}
+                disabled={isCreating}
+                className="inline-flex items-center justify-center gap-2 rounded-lg bg-slate-950 px-5 py-3 text-base font-semibold text-white shadow-sm transition hover:bg-slate-800 focus:outline-none focus:ring-4 focus:ring-teal-200 disabled:cursor-not-allowed disabled:bg-slate-400"
+              >
+                <Plus size={20} />
+                {creatingTarget === "display" ? "创建中" : "创建房间"}
+              </button>
+              <button
+                type="button"
+                onClick={() => createRoom("mobile")}
+                disabled={isCreating}
+                className="inline-flex items-center justify-center gap-2 rounded-lg border border-teal-300 bg-teal-50 px-5 py-3 text-base font-semibold text-teal-900 transition hover:bg-teal-100 focus:outline-none focus:ring-4 focus:ring-teal-200 disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400"
+              >
+                <QrCode size={20} />
+                {creatingTarget === "mobile" ? "创建中" : "扫码点歌"}
+              </button>
+            </div>
             {notice ? (
               <StatusMessage tone="warning" className="mt-4">
                 {notice}
@@ -81,14 +93,14 @@ export default function CreateRoomPage() {
             ) : null}
           </div>
 
-          <div className="grid gap-4">
-            <FeaturePanel
+          <div className="grid gap-5 border-l-0 border-slate-200 md:border-l md:pl-8">
+            <FeatureNote
               icon={<MonitorPlay size={22} />}
               tone="display"
               title="大屏页"
               body="横屏显示当前视频，右上角固定二维码，空房间时显示等待状态。"
             />
-            <FeaturePanel
+            <FeatureNote
               icon={<Smartphone size={22} />}
               tone="mobile"
               title="手机页"
@@ -101,7 +113,7 @@ export default function CreateRoomPage() {
   );
 }
 
-function FeaturePanel({
+function FeatureNote({
   icon,
   tone,
   title,
@@ -113,10 +125,10 @@ function FeaturePanel({
   body: string;
 }) {
   return (
-    <article className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
+    <article className="border-b border-slate-200 pb-5 last:border-b-0 last:pb-0">
       <div className="flex items-start gap-4">
         <div
-          className={`grid h-11 w-11 shrink-0 place-items-center rounded-lg ${
+          className={`grid h-10 w-10 shrink-0 place-items-center rounded-md ${
             tone === "display" ? "bg-teal-50 text-teal-700" : "bg-rose-50 text-rose-700"
           }`}
         >
