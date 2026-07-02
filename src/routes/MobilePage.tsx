@@ -4,7 +4,9 @@ import {
   ListMusic,
   Music2,
   Play,
+  RotateCcw,
   Search,
+  SkipForward,
   Trash2,
   Wifi,
   WifiOff,
@@ -19,7 +21,14 @@ import { useRoomSocket, type SocketStatus } from "../hooks/useRoomSocket";
 import { ApiClientError, searchVideosViaApi } from "../lib/apiClient";
 import { searchMockVideos } from "../lib/mockSearch";
 import { getCurrentItem, getQueuedItems } from "../lib/roomReducer";
-import { addSongToRoom, promoteSong, removeSong, useRoomSnapshot } from "../lib/roomState";
+import {
+  addSongToRoom,
+  playerEnded,
+  promoteSong,
+  removeSong,
+  restartCurrentSong,
+  useRoomSnapshot,
+} from "../lib/roomState";
 import { youtubeEmbedUrl } from "../lib/youtube";
 import { useMobileUiStore } from "../stores/mobileUiStore";
 import type { QueueItem } from "../types/room";
@@ -112,7 +121,6 @@ export default function MobilePage() {
             isSocketConnected={roomSocket.status === "connected"}
             canUseLocalFallback={roomSocket.canUseLocalFallback}
             sendRoomMessage={roomSocket.send}
-            setActiveTab={setActiveTab}
           />
         ) : (
           <QueueTab
@@ -164,19 +172,32 @@ function SearchTab({
   isSocketConnected,
   canUseLocalFallback,
   sendRoomMessage,
-  setActiveTab,
 }: {
   roomId: string;
   existingItems: QueueItem[];
   isSocketConnected: boolean;
   canUseLocalFallback: boolean;
   sendRoomMessage: (message: ClientToServerMessage) => boolean;
-  setActiveTab: (tab: MobileTab) => void;
 }) {
   const [query, setQuery] = useState("");
   const [selected, setSelected] = useState<VideoSearchResult | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
+  const [actionSuccess, setActionSuccess] = useState<string | null>(null);
+  const [recentlyAddedVideoId, setRecentlyAddedVideoId] = useState<string | null>(null);
   const [duplicateCandidate, setDuplicateCandidate] = useState<VideoSearchResult | null>(null);
+
+  useEffect(() => {
+    if (!recentlyAddedVideoId) {
+      return;
+    }
+
+    const timeoutId = window.setTimeout(() => {
+      setRecentlyAddedVideoId(null);
+      setActionSuccess(null);
+    }, 2_400);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [recentlyAddedVideoId]);
 
   const recommendationsQuery = useQuery({
     queryKey: ["search-recommendations", roomId],
@@ -241,9 +262,10 @@ function SearchTab({
       return;
     }
 
-    setActionError(null);
-    setDuplicateCandidate(null);
-    searchMutation.mutate(nextQuery);
+      setActionError(null);
+      setActionSuccess(null);
+      setDuplicateCandidate(null);
+      searchMutation.mutate(nextQuery);
   };
 
   const addSelectedSong = () => {
@@ -285,8 +307,9 @@ function SearchTab({
     }
 
     setActionError(null);
+    setActionSuccess(`已加入播放列表：${result.title}`);
+    setRecentlyAddedVideoId(result.videoId);
     setDuplicateCandidate(null);
-    setActiveTab("queue");
   };
 
   const showingRecommendations = !searchMutation.data;
@@ -334,6 +357,12 @@ function SearchTab({
         </StatusMessage>
       ) : null}
 
+      {actionSuccess ? (
+        <StatusMessage tone="success" className="mt-4">
+          {actionSuccess}
+        </StatusMessage>
+      ) : null}
+
       {recommendationsQuery.isError && showingRecommendations ? (
         <StatusMessage tone="warning" title="推荐加载失败" className="mt-4">
           {searchErrorMessage(recommendationsQuery.error)}
@@ -377,6 +406,7 @@ function SearchTab({
                 result={result}
                 selected={selected?.videoId === result.videoId}
                 duplicate={existingItems.some((item) => item.videoId === result.videoId)}
+                recentlyAdded={recentlyAddedVideoId === result.videoId}
                 onSelect={() => {
                   setSelected(result);
                   setActionError(null);
@@ -421,11 +451,13 @@ function CandidateVideoCard({
   result,
   selected,
   duplicate,
+  recentlyAdded,
   onSelect,
 }: {
   result: VideoSearchResult;
   selected: boolean;
   duplicate: boolean;
+  recentlyAdded: boolean;
   onSelect: () => void;
 }) {
   const handleKeyDown = (event: KeyboardEvent<HTMLElement>) => {
@@ -446,7 +478,9 @@ function CandidateVideoCard({
       onPointerDownCapture={onSelect}
       onKeyDown={handleKeyDown}
       className={`cursor-pointer overflow-hidden rounded-lg border bg-white text-left transition focus:outline-none focus:ring-4 ${
-        selected
+        recentlyAdded
+          ? "border-emerald-500 ring-4 ring-emerald-100"
+          : selected
           ? "border-teal-500 ring-4 ring-teal-100"
           : "border-slate-200 hover:border-slate-300 focus:border-teal-500 focus:ring-teal-100"
       }`}
@@ -483,6 +517,11 @@ function CandidateVideoCard({
             {selected ? (
               <span className="mt-2 inline-flex rounded-md bg-teal-50 px-2 py-1 text-[11px] font-semibold text-teal-700">
                 已选中
+              </span>
+            ) : null}
+            {recentlyAdded ? (
+              <span className="mt-2 inline-flex rounded-md bg-emerald-50 px-2 py-1 text-[11px] font-semibold text-emerald-700">
+                已加入播放列表
               </span>
             ) : null}
           </div>
@@ -539,6 +578,29 @@ function QueueTab({
     setConfirmAction(null);
   };
 
+  const handlePlaybackControl = (action: "skip" | "restart") => {
+    if (!currentItem) {
+      setActionError("当前没有正在播放的歌曲。");
+      return;
+    }
+
+    const sentOrFallback = runPlaybackControl({
+      roomId,
+      action,
+      item: currentItem,
+      isSocketConnected,
+      canUseLocalFallback,
+      sendRoomMessage,
+    });
+
+    if (!sentOrFallback) {
+      setActionError("房间连接正在恢复，请稍后再控制播放。");
+      return;
+    }
+
+    setActionError(null);
+  };
+
   return (
     <section className="flex-1 overflow-y-auto px-4 py-4 scrollbar-soft">
       {actionError ? (
@@ -550,21 +612,41 @@ function QueueTab({
       <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
         <p className="text-xs font-semibold text-teal-700">正在播放</p>
         {currentItem ? (
-          <div className="mt-2 flex items-center gap-3">
-            {currentItem.thumbnailUrl ? (
-              <img
-                src={currentItem.thumbnailUrl}
-                alt=""
-                className="h-16 w-24 rounded-md object-cover"
-              />
-            ) : null}
-            <div className="min-w-0">
-              <h2 className="line-clamp-2 font-semibold text-slate-950">{currentItem.title}</h2>
-              <p className="mt-1 truncate text-sm text-slate-500">
-                {currentItem.channelTitle ?? "未知频道"}
-              </p>
+          <>
+            <div className="mt-2 flex items-center gap-3">
+              {currentItem.thumbnailUrl ? (
+                <img
+                  src={currentItem.thumbnailUrl}
+                  alt=""
+                  className="h-16 w-24 rounded-md object-cover"
+                />
+              ) : null}
+              <div className="min-w-0">
+                <h2 className="line-clamp-2 font-semibold text-slate-950">{currentItem.title}</h2>
+                <p className="mt-1 truncate text-sm text-slate-500">
+                  {currentItem.channelTitle ?? "未知频道"}
+                </p>
+              </div>
             </div>
-          </div>
+            <div className="mt-4 grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={() => handlePlaybackControl("restart")}
+                className="inline-flex items-center justify-center gap-2 rounded-md bg-teal-500 px-3 py-2 text-sm font-semibold text-slate-950 transition hover:bg-teal-400"
+              >
+                <RotateCcw size={16} />
+                重唱
+              </button>
+              <button
+                type="button"
+                onClick={() => handlePlaybackControl("skip")}
+                className="inline-flex items-center justify-center gap-2 rounded-md bg-slate-950 px-3 py-2 text-sm font-semibold text-white transition hover:bg-slate-800"
+              >
+                <SkipForward size={16} />
+                切歌
+              </button>
+            </div>
+          </>
         ) : (
           <p className="mt-2 text-sm text-slate-500">当前没有视频播放</p>
         )}
@@ -736,6 +818,44 @@ function runQueueAction({
 
   if (canUseLocalFallback) {
     removeSong(roomId, action.item.id);
+    return true;
+  }
+
+  return false;
+}
+
+function runPlaybackControl({
+  roomId,
+  action,
+  item,
+  isSocketConnected,
+  canUseLocalFallback,
+  sendRoomMessage,
+}: {
+  roomId: string;
+  action: "skip" | "restart";
+  item: QueueItem;
+  isSocketConnected: boolean;
+  canUseLocalFallback: boolean;
+  sendRoomMessage: (message: ClientToServerMessage) => boolean;
+}) {
+  if (isSocketConnected) {
+    return sendRoomMessage({
+      type: action === "skip" ? "PLAYER_ENDED" : "RESTART_CURRENT_ITEM",
+      payload: {
+        queueItemId: item.id,
+        videoId: item.videoId,
+      },
+    });
+  }
+
+  if (canUseLocalFallback) {
+    if (action === "skip") {
+      playerEnded(roomId, item.id, item.videoId);
+    } else {
+      restartCurrentSong(roomId, item.id, item.videoId);
+    }
+
     return true;
   }
 

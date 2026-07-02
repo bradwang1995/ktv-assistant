@@ -35,6 +35,7 @@ interface FullscreenPlayerProps {
 
 export interface FullscreenPlayerHandle {
   play: () => void;
+  restart: () => void;
 }
 
 export const FullscreenPlayer = forwardRef<FullscreenPlayerHandle, FullscreenPlayerProps>(
@@ -56,6 +57,7 @@ export const FullscreenPlayer = forwardRef<FullscreenPlayerHandle, FullscreenPla
   const shellRef = useRef<HTMLDivElement | null>(null);
   const playerRef = useRef<YouTubePlayer | null>(null);
   const pendingPlayRef = useRef(false);
+  const pendingRestartRef = useRef(false);
   const startedRef = useRef(false);
   const endedRef = useRef(false);
   const lastPlayRequestRef = useRef(0);
@@ -120,6 +122,19 @@ export const FullscreenPlayer = forwardRef<FullscreenPlayerHandle, FullscreenPla
     }
   };
 
+  const requestRestart = (player: YouTubePlayer) => {
+    pendingRestartRef.current = false;
+    pendingPlayRef.current = true;
+
+    if (typeof player.loadVideoById === "function") {
+      player.loadVideoById({ videoId, startSeconds: 0 });
+    } else {
+      player.seekTo?.(0, true);
+    }
+
+    requestPlay(player);
+  };
+
   const applyPlaybackQuality = (player: YouTubePlayer) => {
     clearQualityRetryTimeouts();
     player.setPlaybackQuality?.(playbackQualityRef.current);
@@ -138,6 +153,14 @@ export const FullscreenPlayer = forwardRef<FullscreenPlayerHandle, FullscreenPla
       if (playerRef.current) {
         requestPlay(playerRef.current);
       } else {
+        pendingPlayRef.current = true;
+      }
+    },
+    restart() {
+      if (playerRef.current) {
+        requestRestart(playerRef.current);
+      } else {
+        pendingRestartRef.current = true;
         pendingPlayRef.current = true;
       }
     },
@@ -173,6 +196,7 @@ export const FullscreenPlayer = forwardRef<FullscreenPlayerHandle, FullscreenPla
 
     startedRef.current = false;
     endedRef.current = false;
+    pendingRestartRef.current = false;
     canReportQualityChangeRef.current = false;
     clearQualityChangeReportTimeout();
     pendingPlayRef.current = autoPlay || playRequestId > 0;
@@ -249,6 +273,11 @@ export const FullscreenPlayer = forwardRef<FullscreenPlayerHandle, FullscreenPla
       qualityChangeReportTimeoutRef.current = window.setTimeout(() => {
         canReportQualityChangeRef.current = true;
       }, 4_000);
+
+      if (pendingRestartRef.current) {
+        requestRestart(event.target);
+        return;
+      }
 
       if (pendingPlayRef.current) {
         requestPlay(event.target);

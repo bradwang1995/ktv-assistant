@@ -45,7 +45,11 @@ function isClientMessage(value: unknown): value is ClientToServerMessage {
     return isObject(message.payload) && hasString(message.payload, "queueItemId");
   }
 
-  if (message.type === "PLAYER_STARTED" || message.type === "PLAYER_ENDED") {
+  if (
+    message.type === "PLAYER_STARTED" ||
+    message.type === "PLAYER_ENDED" ||
+    message.type === "RESTART_CURRENT_ITEM"
+  ) {
     return (
       isObject(message.payload) &&
       hasString(message.payload, "queueItemId") &&

@@ -199,6 +199,33 @@ export function markPlayerEnded(
   );
 }
 
+export function restartCurrentItem(
+  snapshot: RoomSnapshot,
+  queueItemId: string,
+  videoId: string,
+  now = new Date().toISOString(),
+): RoomSnapshot {
+  if (
+    snapshot.playback.currentQueueItemId !== queueItemId ||
+    snapshot.playback.currentVideoId !== videoId
+  ) {
+    return snapshot;
+  }
+
+  return touchRoom(
+    {
+      ...snapshot,
+      playback: {
+        ...snapshot.playback,
+        playerState: "loading",
+        startedAt: undefined,
+        updatedAt: now,
+      },
+    },
+    now,
+  );
+}
+
 export function cleanupCompletedItems(
   snapshot: RoomSnapshot,
   now = new Date().toISOString(),

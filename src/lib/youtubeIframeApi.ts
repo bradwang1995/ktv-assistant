@@ -14,6 +14,8 @@ export type YouTubePlayerState =
 
 export interface YouTubePlayer {
   playVideo?: () => void;
+  pauseVideo?: () => void;
+  seekTo?: (seconds: number, allowSeekAhead?: boolean) => void;
   cueVideoById?: (options: { videoId: string; startSeconds?: number }) => void;
   loadVideoById?: (options: { videoId: string; startSeconds?: number }) => void;
   setPlaybackQuality?: (suggestedQuality: string) => void;

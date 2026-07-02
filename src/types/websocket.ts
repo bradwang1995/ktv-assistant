@@ -46,6 +46,13 @@ export type ClientToServerMessage =
       };
     }
   | {
+      type: "RESTART_CURRENT_ITEM";
+      payload: {
+        queueItemId: string;
+        videoId: string;
+      };
+    }
+  | {
       type: "PING";
     };
 
@@ -68,4 +75,3 @@ export type ServerToClientMessage =
   | {
       type: "PONG";
     };
-

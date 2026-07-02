@@ -6,6 +6,7 @@ import {
   markPlayerStarted,
   promoteQueueItem,
   removeQueueItem,
+  restartCurrentItem,
 } from "../src/lib/roomReducer";
 
 export type RoomCommandMessage = Extract<
@@ -15,6 +16,7 @@ export type RoomCommandMessage = Extract<
   | { type: "REMOVE_QUEUE_ITEM" }
   | { type: "PLAYER_STARTED" }
   | { type: "PLAYER_ENDED" }
+  | { type: "RESTART_CURRENT_ITEM" }
 >;
 
 export function applyRoomCommand(
@@ -36,6 +38,11 @@ export function applyRoomCommand(
       );
     case "PLAYER_ENDED":
       return markPlayerEnded(snapshot, message.payload.queueItemId, message.payload.videoId);
+    case "RESTART_CURRENT_ITEM":
+      return restartCurrentItem(
+        snapshot,
+        message.payload.queueItemId,
+        message.payload.videoId,
+      );
   }
 }
-

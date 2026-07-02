@@ -8,6 +8,7 @@ import {
   markPlayerEnded,
   promoteQueueItem,
   removeQueueItem,
+  restartCurrentItem,
 } from "./roomReducer";
 
 describe("room reducer", () => {
@@ -58,6 +59,23 @@ describe("room reducer", () => {
 
     expect(getCurrentItem(advanced)?.videoId).toBe("second");
     expect(getQueuedItems(advanced)).toEqual([]);
+  });
+
+  it("marks the current song as loading again when restarting", () => {
+    const initial = createInitialSnapshot("room-a", "2026-06-23T00:00:00.000Z");
+    const withFirst = addQueueItem(initial, { videoId: "first", title: "第一首" });
+    const current = getCurrentItem(withFirst)!;
+    const restarted = restartCurrentItem(
+      withFirst,
+      current.id,
+      current.videoId,
+      "2026-06-23T00:01:00.000Z",
+    );
+
+    expect(getCurrentItem(restarted)?.videoId).toBe("first");
+    expect(restarted.playback.playerState).toBe("loading");
+    expect(restarted.playback.startedAt).toBeUndefined();
+    expect(restarted.playback.updatedAt).toBe("2026-06-23T00:01:00.000Z");
   });
 
   it("removes completed items during cleanup", () => {

@@ -6,6 +6,7 @@ import {
   markPlayerStarted,
   promoteQueueItem,
   removeQueueItem,
+  restartCurrentItem,
 } from "./roomReducer";
 import type { QueueItemInput, RoomSnapshot } from "../types/room";
 
@@ -69,6 +70,10 @@ export function playerStarted(roomId: string, queueItemId: string, videoId: stri
 
 export function playerEnded(roomId: string, queueItemId: string, videoId: string) {
   saveRoomSnapshot(markPlayerEnded(readRoomSnapshot(roomId), queueItemId, videoId));
+}
+
+export function restartCurrentSong(roomId: string, queueItemId: string, videoId: string) {
+  saveRoomSnapshot(restartCurrentItem(readRoomSnapshot(roomId), queueItemId, videoId));
 }
 
 export function useRoomSnapshot(roomId: string) {

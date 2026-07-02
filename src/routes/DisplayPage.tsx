@@ -40,6 +40,7 @@ export default function DisplayPage() {
   );
   const playerHandleRef = useRef<FullscreenPlayerHandle | null>(null);
   const lastAutoPlayItemIdRef = useRef<string | null>(null);
+  const handledLoadingPlaybackKeyRef = useRef<string | null>(null);
 
   const mobileUrl = useMemo(() => {
     const path = `/room/${roomId}/mobile`;
@@ -99,9 +100,29 @@ export default function DisplayPage() {
     }
 
     lastAutoPlayItemIdRef.current = currentItem.id;
+    handledLoadingPlaybackKeyRef.current = playbackLoadingKey(
+      currentItem.id,
+      snapshot.playback.updatedAt,
+    );
     setPlayerIssue(null);
     setPlayRequestId((requestId) => requestId + 1);
-  }, [currentItem?.id]);
+  }, [currentItem?.id, snapshot.playback.updatedAt]);
+
+  useEffect(() => {
+    if (!currentItem || snapshot.playback.playerState !== "loading") {
+      return;
+    }
+
+    const loadingKey = playbackLoadingKey(currentItem.id, snapshot.playback.updatedAt);
+
+    if (handledLoadingPlaybackKeyRef.current === loadingKey) {
+      return;
+    }
+
+    handledLoadingPlaybackKeyRef.current = loadingKey;
+    setPlayerIssue(null);
+    playerHandleRef.current?.restart();
+  }, [currentItem, snapshot.playback.playerState, snapshot.playback.updatedAt]);
 
   const handleStart = () => {
     if (!currentItem) return;
@@ -297,6 +318,10 @@ export default function DisplayPage() {
       </div>
     </main>
   );
+}
+
+function playbackLoadingKey(queueItemId: string, updatedAt: string) {
+  return `${queueItemId}:${updatedAt}`;
 }
 
 function ConnectionBadge({
