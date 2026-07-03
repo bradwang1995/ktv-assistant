@@ -19,8 +19,8 @@
 | PIT-10 | P1 | Display player | Hide removable YouTube player chrome such as title/menu/settings/fullscreen; keep app-level playback controls. | Done |
 | PIT-11 | P1 | Display player | Keep a useful progress/seek control after hiding YouTube controls. | Done |
 | PIT-12 | P1 | Display quality | Keep the app quality selector authoritative and avoid mismatched YouTube quality chrome. | Done |
-| PIT-13 | P0 | Room lifecycle | Auto-clean inactive rooms after 5 minutes without activity. | Planned |
-| PIT-14 | P0 | Room heartbeat | Treat open display/mobile pages as active by sending/receiving periodic heartbeats. | Planned |
+| PIT-13 | P0 | Room lifecycle | Auto-clean inactive rooms after 5 minutes without activity. | Done |
+| PIT-14 | P0 | Room heartbeat | Treat open display/mobile pages as active by sending/receiving periodic heartbeats. | Done |
 | PIT-15 | P1 | Search quota | Show remaining YouTube Search API calls using a backend estimate and reset it on the correct daily schedule. | Done |
 
 ## Implementation Groups
@@ -55,6 +55,9 @@
   - `npm run typecheck` passed.
 - 2026-07-03 group 3 display/preview YouTube chrome cleanup:
   - `npm run typecheck` passed.
+- 2026-07-03 group 4 room heartbeat and inactivity cleanup:
+  - `npm run typecheck` passed.
+  - `npm run test -- worker/roomCommands.test.ts worker/websocketMessages.test.ts` passed.
 
 ## Commit Log
 

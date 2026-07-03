@@ -2,9 +2,11 @@ import type { RoomSnapshot } from "../src/types/room";
 import type { ClientRole } from "../src/types/websocket";
 import { cleanupCompletedItems } from "../src/lib/roomReducer";
 import {
+  deactivateRoomInD1,
   deleteInactiveQueueItemsFromD1,
   getRoomSnapshotFromD1,
   saveRoomSnapshotToD1,
+  touchRoomActivityInD1,
 } from "./d1Repository";
 import { apiError, jsonResponse } from "./json";
 import { applyRoomCommand, type RoomCommandMessage } from "./roomCommands";
@@ -17,6 +19,14 @@ interface ClientInfo {
   role: ClientRole;
   displayName?: string;
   connectedAt: string;
+}
+
+const ROOM_INACTIVITY_TIMEOUT_MS = 5 * 60 * 1000;
+const ACTIVITY_STORAGE_KEY = "room-activity";
+
+interface RoomActivityState {
+  roomId: string;
+  lastActiveAt: string;
 }
 
 export class RoomDurableObject {
@@ -43,6 +53,7 @@ export class RoomDurableObject {
         return apiError(503, "D1_NOT_CONFIGURED", "D1 binding DB is not configured.");
       }
 
+      await this.touchRoomActivity(route.roomId);
       const snapshot = await getRoomSnapshotFromD1(this.env.DB, route.roomId);
 
       if (!snapshot) {
@@ -61,6 +72,7 @@ export class RoomDurableObject {
         return apiError(503, "D1_NOT_CONFIGURED", "D1 binding DB is not configured.");
       }
 
+      await this.touchRoomActivity(route.roomId);
       const snapshot = await this.getSnapshot(route.roomId);
       const cleaned = {
         ...cleanupCompletedItems(snapshot),
@@ -69,6 +81,7 @@ export class RoomDurableObject {
 
       await saveRoomSnapshotToD1(this.env.DB, cleaned);
       await deleteInactiveQueueItemsFromD1(this.env.DB, route.roomId);
+      await this.touchRoomActivity(route.roomId);
 
       const nextSnapshot = {
         ...((await getRoomSnapshotFromD1(this.env.DB, route.roomId)) ?? cleaned),
@@ -88,6 +101,7 @@ export class RoomDurableObject {
         return new Response("Expected Upgrade: websocket", { status: 426 });
       }
 
+      await this.touchRoomActivity(route.roomId);
       return this.handleWebSocket(request, route.roomId);
     }
 
@@ -151,11 +165,13 @@ export class RoomDurableObject {
       const message = decodeClientMessage(data);
 
       if (message.type === "PING") {
+        await this.touchRoomActivity(roomId);
         socket.send(encodeServerMessage({ type: "PONG" }));
         return;
       }
 
       if (message.type === "JOIN_ROOM") {
+        await this.touchRoomActivity(roomId);
         this.sockets.set(socket, {
           clientId: message.clientId,
           role: message.role,
@@ -173,6 +189,7 @@ export class RoomDurableObject {
         roomId,
         message as RoomCommandMessage,
       );
+      await this.touchRoomActivity(roomId);
       this.broadcastSnapshot(nextSnapshot);
     } catch (error) {
       this.sendError(
@@ -221,6 +238,56 @@ export class RoomDurableObject {
     await saveRoomSnapshotToD1(this.env.DB, nextSnapshot);
 
     return nextSnapshot;
+  }
+
+  private async touchRoomActivity(roomId: string, now = new Date()) {
+    const lastActiveAt = now.toISOString();
+
+    await this.state.storage.put(ACTIVITY_STORAGE_KEY, {
+      roomId,
+      lastActiveAt,
+    } satisfies RoomActivityState);
+    await this.state.storage.setAlarm(now.getTime() + ROOM_INACTIVITY_TIMEOUT_MS);
+
+    if (this.env.DB) {
+      await touchRoomActivityInD1(this.env.DB, roomId, lastActiveAt);
+    }
+
+    return lastActiveAt;
+  }
+
+  async alarm() {
+    const activity = await this.state.storage.get<RoomActivityState>(ACTIVITY_STORAGE_KEY);
+
+    if (!activity) {
+      return;
+    }
+
+    if (this.sockets.size > 0) {
+      await this.touchRoomActivity(activity.roomId);
+      return;
+    }
+
+    const lastActiveMs = Date.parse(activity.lastActiveAt);
+    const now = Date.now();
+
+    if (!Number.isFinite(lastActiveMs)) {
+      await this.state.storage.delete(ACTIVITY_STORAGE_KEY);
+      return;
+    }
+
+    const inactiveForMs = now - lastActiveMs;
+
+    if (inactiveForMs < ROOM_INACTIVITY_TIMEOUT_MS) {
+      await this.state.storage.setAlarm(lastActiveMs + ROOM_INACTIVITY_TIMEOUT_MS);
+      return;
+    }
+
+    if (this.env.DB) {
+      await deactivateRoomInD1(this.env.DB, activity.roomId, new Date(now).toISOString());
+    }
+
+    await this.state.storage.delete(ACTIVITY_STORAGE_KEY);
   }
 
   private sendSnapshot(socket: WebSocket, snapshot: RoomSnapshot) {

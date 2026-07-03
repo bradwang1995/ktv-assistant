@@ -217,6 +217,23 @@ export async function saveRoomSnapshotToD1(db: D1Database, snapshot: RoomSnapsho
   }
 }
 
+export async function touchRoomActivityInD1(
+  db: D1Database,
+  roomId: string,
+  now = new Date().toISOString(),
+) {
+  await db
+    .prepare(
+      `
+      UPDATE rooms
+      SET updated_at = ?, is_active = 1
+      WHERE id = ?
+      `,
+    )
+    .bind(now, roomId)
+    .run();
+}
+
 export async function deleteInactiveQueueItemsFromD1(db: D1Database, roomId: string) {
   await db
     .prepare(
@@ -224,6 +241,49 @@ export async function deleteInactiveQueueItemsFromD1(db: D1Database, roomId: str
       DELETE FROM queue_items
       WHERE room_id = ?
         AND status IN ('completed', 'removed')
+      `,
+    )
+    .bind(roomId)
+    .run();
+}
+
+export async function deactivateRoomInD1(
+  db: D1Database,
+  roomId: string,
+  now = new Date().toISOString(),
+) {
+  await db
+    .prepare(
+      `
+      UPDATE rooms
+      SET updated_at = ?, is_active = 0
+      WHERE id = ?
+      `,
+    )
+    .bind(now, roomId)
+    .run();
+
+  await db
+    .prepare(
+      `
+      UPDATE playback_states
+      SET
+        current_queue_item_id = NULL,
+        current_video_id = NULL,
+        player_state = 'idle',
+        started_at = NULL,
+        updated_at = ?
+      WHERE room_id = ?
+      `,
+    )
+    .bind(now, roomId)
+    .run();
+
+  await db
+    .prepare(
+      `
+      DELETE FROM queue_items
+      WHERE room_id = ?
       `,
     )
     .bind(roomId)
