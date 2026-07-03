@@ -15,14 +15,14 @@
 ## 当前功能
 
 - `/create` 创建房间并进入大屏页；手机点歌入口在房间大屏页的二维码和手机链接里。
-- `/room/:roomId/display` 大屏播放页，显示 QR code、当前歌曲、连接状态、app 自有播放/切歌/清晰度/进度控制和 YouTube search quota 估算；二维码避开播放区，手机页链接会打开新 tab。
-- `/room/:roomId/mobile` 手机点歌页，支持按歌名/歌手搜索、pill-shaped 带原唱 toggle、sticky 搜索工具条、缓存推荐、单个 active preview、点击外部停止预览、连续点歌不跳转、点歌飞行动画、页面级 toast、搜索状态恢复、缓存加载更多、置顶、删歌、切歌、重唱、重复点歌提示和刷新保留 tab。
+- `/room/:roomId/display` 大屏播放页，显示 QR code、当前歌曲、连接状态、下一首、真实清晰度选项、居中进度/seek 控制和 YouTube search quota 估算；`扫码点歌` 标题和二维码会打开手机页新 tab。
+- `/room/:roomId/mobile` 手机点歌页，支持按歌名/歌手搜索、pill-shaped 带原唱 toggle、sticky 搜索工具条、缓存推荐、单个 480p active preview、点击外部停止预览、连续点歌不跳转、点歌飞行动画、页面级 toast、搜索状态恢复、缓存加载更多、直接置顶、删歌、切歌/重唱确认、重复点歌提示和刷新保留 tab。
 - `/room/:roomId/debug` 调试页，支持查看 snapshot、复制房间链接、刷新远端状态和清理已完成歌曲。
 - 后端搜索接入 YouTube Data API，KV 缓存搜索结果和默认推荐；冷搜索默认最多消耗 1 次 `search.list` call、缓存 50 条候选，API 最多返回 40 条，KTV/karaoke 版本优先，手机端先显示 8 条再从当前缓存展开，并有基础搜索限流。
-- YouTube search quota 使用 KV 做后台估算，按 Pacific Time 午夜重置，并提供 `GET /api/youtube/quota` 给大屏页低调展示今日剩余额度。
+- YouTube search quota 使用 KV 做后台估算，按 Pacific Time 午夜重置，并提供 `GET /api/youtube/quota` 给大屏页按浏览器本地时区展示重置时间。
 - 大屏接入 YouTube IFrame Player API，当前歌出现后会主动尝试播放，切到下一首或手机端切歌时继续自动尝试播放；播放开始/结束会同步 `PLAYER_STARTED` / `PLAYER_ENDED`，手机端重唱会同步重头播放，YouTube 原生控件尽量隐藏，进度和清晰度由 app 控制。
 - Room Durable Object 会把 WebSocket `PING`、JOIN、snapshot 和队列命令视为活跃心跳；5 分钟没有活跃请求时自动将房间置为 inactive 并清理队列/播放状态。
-- 大屏播放器默认建议 1080p 清晰度，并会记住本机上次选择的播放清晰度用于下一首视频。
+- 大屏播放器默认建议 1080p 清晰度，并会记住本机上次选择的播放清晰度用于下一首视频；清晰度菜单来自当前视频实际可用档位，不再显示 `最高` 占位。
 - WebSocket 支持重连 backoff；production 断线时不会静默写入本地假状态。
 - 本地 Vite 模式保留 localStorage fallback，方便 UI 开发。
 

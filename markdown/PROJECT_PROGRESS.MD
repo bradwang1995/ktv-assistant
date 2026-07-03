@@ -25,10 +25,10 @@ Last updated: 2026-07-03
 - `[x]` 模拟搜索可返回更多候选，手机端先显示 8 个并可从当前缓存继续展开
 - `[x]` 候选视频使用 YouTube embed 预览
 - `[x]` 用户可以选择候选视频并点歌
-- `[x]` 歌单支持置顶和删歌确认
+- `[x]` 歌单支持直接置顶、删歌确认，以及重唱/切歌确认
 - `[x]` 大屏和手机页在同一浏览器环境里通过 `localStorage + BroadcastChannel` 同步
 - `[x]` 第一首歌自动成为当前播放
-- `[x]` 大屏可手动「开始 K 歌」和「下一首」
+- `[x]` 大屏会自动尝试播放当前歌，并提供「下一首」、清晰度和进度/seek 控制
 - `[x]` 手机歌单页可远程「切歌」和「重唱」
 - `[x]` 基础 reducer 单元测试
 - `[x]` `npm run build` 通过
@@ -46,15 +46,15 @@ Last updated: 2026-07-03
 - `[x]` 候选卡片的 `已选中` / `已在歌单` 使用右下角 overlay pill tags，不再挤压卡片内容
 - `[x]` 点歌成功使用页面级 toast 和飞向歌单计数的动画反馈，不再在卡片里显示临时加入提示
 - `[~]` 大屏播放器已接入 YouTube IFrame Player API 状态机；移动端预览仍使用普通 iframe
-- `[x]` 大屏播放器隐藏 YouTube 原生控件，使用 app 自有开始/下一首/清晰度/进度控制
+- `[x]` 大屏播放器隐藏 YouTube 原生控件，使用 app 自有下一首、清晰度和居中进度/seek 控制
 - `[x]` Cloudflare backend 已有 API router、D1 repository、Worker 入口和 Room Durable Object Worker 配置
 - `[x]` 已实现 D1 repository 写法，并通过真实 Cloudflare D1 remote API 验证
 - `[x]` KV namespace `SEARCH_CACHE` 已创建并完成 Worker 绑定验证
 - `[x]` 已通过真实 Cloudflare runtime 验证 WebSocket 房间连接和队列命令路径
 - `[x]` YouTube 搜索默认每次冷缓存填充只使用 1 个 `search.list` call，最多缓存 50 条候选，适配 50/day quota
-- `[x]` YouTube search quota 后台估算按 Pacific Time 午夜重置，并通过大屏页展示剩余次数
+- `[x]` YouTube search quota 后台估算按 Pacific Time 午夜重置，并通过大屏页按浏览器本地时区展示剩余次数和重置时间
 - `[x]` 手机端点击或播放搜索候选预览时会先选中该视频
-- `[x]` 手机端同一时间只挂载一个 active preview iframe
+- `[x]` 手机端同一时间只挂载一个 active preview iframe，预览默认请求 480p 并减少 hover chrome
 - `[x]` 手机端点击搜索结果外部时会卸载当前 preview iframe，避免继续消耗流量
 - `[x]` 大屏二维码已下移，避免遮挡 YouTube 顶部播放控件
 - `[x]` Room Durable Object 使用 heartbeat/activity + alarm，5 分钟无活跃后自动清理 inactive room
@@ -206,7 +206,7 @@ Last updated: 2026-07-03
 - `[x]` 搜索失败友好提示
 - `[x]` quota 保护策略：默认 50 calls/day，每次 cache fill 默认 1 call / 50 results
 - `[x]` KTV/karaoke 搜索结果无论是否带原唱都保持最高优先级，其次再考虑伴奏、lyrics/MV 和原唱意图
-- `[x]` `GET /api/youtube/quota` 返回后台估算的今日搜索额度，按 Pacific Time 午夜重置
+- `[x]` `GET /api/youtube/quota` 返回后台估算的今日搜索额度和 Pacific Time 重置点，前端按浏览器本地时区展示
 - `[x]` 使用真实 `YOUTUBE_API_KEY` 验证 YouTube result quality
 
 建议实现方式：
@@ -231,7 +231,8 @@ Last updated: 2026-07-03
 - `[x]` 点击或播放候选视频预览时会先选中该候选
 - `[x]` 同一时间只有一个 preview iframe 可播放
 - `[x]` 点击搜索结果外部会停止当前 preview
-- `[x]` preview iframe 尽量隐藏 YouTube 原生 controls 和 fullscreen
+- `[x]` preview iframe 尽量隐藏 YouTube 原生 controls/fullscreen/hover chrome，并默认请求 480p
+- `[x]` 预览卡片不再显示单独播放图标，点选卡片即自动预览
 - `[x]` 选中态边框
 - `[x]` 点歌按钮
 - `[~]` 响应式布局已做基础版
@@ -249,7 +250,7 @@ Last updated: 2026-07-03
 - `[x]` 大屏显示当前歌曲
 - `[x]` 没有歌曲时显示「当前没有视频播放」
 - `[x]` 大屏 YouTube IFrame Player API 播放当前视频
-- `[x]` 手动「开始 K 歌」
+- `[x]` 当前歌出现后自动请求播放；浏览器拦截时显示自动播放受限提示
 - `[x]` 手动「下一首」
 - `[x]` 手机端远程「切歌」会推进到下一首
 - `[x]` 手机端远程「重唱」会让当前歌曲从头播放
@@ -259,11 +260,12 @@ Last updated: 2026-07-03
 - `[x]` 自动发送 `PLAYER_ENDED`
 - `[x]` 自动切下一首并播放
 - `[x]` 播放控制栏移到 YouTube iframe 外，避免遮挡进度条
-- `[x]` `开始 K 歌` 点击路径直接请求播放器播放，并保留自动播放重试
+- `[x]` 去掉冗余 `开始 K 歌` 按钮，保留自动播放重试和下一首控制
 - `[x]` 当前歌出现后默认主动请求播放，不再要求先点击底部按钮才能启用下一首自动续播
 - `[x]` 切到下一首时等待 YouTube player API 方法可用后再请求播放，避免 `playVideo` 尚未挂载导致 display 白屏
 - `[x]` 默认建议 1080p 清晰度，并记住本机选择的清晰度用于下一首视频
-- `[x]` 隐藏 YouTube 原生 controls/fullscreen，改用 app 自有清晰度和进度/seek 控制
+- `[x]` 清晰度菜单使用当前视频实际可用档位，并在首选档位不可用时显示实际生效档位
+- `[x]` 隐藏 YouTube 原生 controls/fullscreen，改用 app 自有清晰度和居中进度/seek 控制
 - `[x]` 播放失败兜底 UI
 - `[ ]` 浏览器 autoplay 限制下的真实设备测试
 
@@ -285,11 +287,13 @@ Last updated: 2026-07-03
 - `[x]` display mobile link opens in a new browser tab
 - `[x]` YouTube API 使用说明或 footer
 - `[x]` search cache fill defaults to one YouTube search call and 50 cached results
-- `[x]` display QR code offset avoids the YouTube top-right playback/settings area
+- `[x]` display QR code offset avoids the YouTube top-right playback/settings area, with `扫码点歌` as the link and no copy/open-phone buttons
 - `[x]` Create page 只提供创建房间入口，扫码点歌入口保留在已创建房间的大屏页
 - `[x]` Mobile search controls are sticky while scrolling, with result count visible near the controls
 - `[x]` Room Durable Object refreshes activity on JOIN/PING/snapshot/commands and expires rooms after 5 minutes without activity
 - `[x]` Display page shows a small YouTube search quota estimate
+- `[x]` Display page formats quota reset time in the browser's local timezone
+- `[x]` Mobile queue tab hides the duplicate tab count, promotes directly, and confirms restart/skip
 - `[~]` 移动端 Safari 测试：测试清单已补，待实机验收
 - `[~]` Android Chrome 测试：测试清单已补，待实机验收
 - `[~]` iPad Safari 测试：测试清单已补，待实机验收
@@ -321,6 +325,7 @@ Last updated: 2026-07-03
 - `[x]` Post-internal-test group verification: typecheck plus targeted search/quota/WebSocket tests
 - `[ ]` Playwright E2E test
 - `[x]` Local browser smoke: display autoplay params, saved quality preference, and `下一首` continuation verified through Vite dev server
+- `[~]` Post-internal-test pass 2 browser smoke: local Vite server could not bind a port in the desktop sandbox (`listen UNKNOWN`), so visual QA is deferred to production/manual smoke
 - `[~]` Manual QR scan / device matrix documented in `testing.md`
 
 ## Recommended Next Iterations
@@ -434,7 +439,7 @@ curl -X POST https://ktv-assistant.bradwang1995.workers.dev/api/rooms/<roomId>/c
 curl https://ktv-assistant.bradwang1995.workers.dev/api/youtube/quota
 ```
 
-Remote Step 7/8, Step 8.5, Step 8.6, Step 9.5, production testing docs, search quota polish, candidate selection polish, QR overlay polish, display autoplay follow-up, playback-quality persistence, the first internal-test fix pass, and post-internal-test fix pass 1 were updated through 2026-07-03. Latest main Worker + Assets deploy version: `036c62e4-0999-4cf1-a034-083664f2e97e`; latest Room Worker deploy version: `fd9accc1-1c03-42d0-a200-2790d1febf0a`; latest production smoke room: `6i541m0i`.
+Remote Step 7/8, Step 8.5, Step 8.6, Step 9.5, production testing docs, search quota polish, candidate selection polish, QR overlay polish, display autoplay follow-up, playback-quality persistence, the first internal-test fix pass, post-internal-test fix pass 1, and post-internal-test fix pass 2 were updated through 2026-07-03. Latest main Worker + Assets deploy version: pending pass 2 deployment; latest Room Worker deploy version: `fd9accc1-1c03-42d0-a200-2790d1febf0a`; latest production smoke room: pending pass 2 smoke.
 
 ## Notes
 

@@ -79,7 +79,9 @@ https://ktv-assistant.bradwang1995.workers.dev/room/<roomId>/mobile
 - 默认先显示 8 条结果；滚动到底部后从当前响应缓存继续加载更多，最多 40 条，不应触发新的 search API call。
 - 可以选择 `歌名 / 歌手`，也可以用 pill-shaped toggle 打开或关闭 `带原唱`；搜索设置和结果数量应在滚动时保持 sticky。
 - 前排结果优先匹配搜索的歌名或歌手本身；KTV/karaoke 版本应保持最高优先级，`带原唱` 再影响 lyric/MV/歌词结果排序。
+- 搜索短词时，标题本身命中的结果应排在标题不相关的 KTV/伴奏结果前面，例如搜 `依赖` 时，`离开我的依赖` 的 lyrics/带原唱/伴奏结果不应被 `唯一` 这类无关标题压住。
 - 同一时间只有一个候选卡片挂载 YouTube 预览 iframe，其他候选显示封面。
+- 候选预览应直接由点选卡片触发，不显示额外播放按钮；预览默认请求 480p，并尽量不触发 YouTube hover chrome。
 - 点选某个候选视频后，它会有选中态，`已选中` / `已在歌单` 应是右下角 overlay tag，不应造成卡片内容下移。
 - 直接点击或播放候选视频预览时，也会先选中该候选。
 - 点击候选卡片外部后，当前 preview 应停止。
@@ -96,7 +98,7 @@ https://ktv-assistant.bradwang1995.workers.dev/room/<roomId>/mobile
 - Display 页面不用刷新就会更新。
 - 第一首歌自动成为当前播放。
 - 队列数量会更新。
-- 右上角二维码仍然存在，并且不应遮挡 YouTube 右上角播放设置。
+- 右上角二维码仍然存在，并且不应遮挡 YouTube 右上角播放设置；`扫码点歌` 标题本身应打开手机页新 tab，QR 区域不再显示 copy 或 `打开手机页` 按钮。
 
 12. 再从手机页添加第二首歌。
 13. 队列预期：
@@ -104,29 +106,30 @@ https://ktv-assistant.bradwang1995.workers.dev/room/<roomId>/mobile
 - 当前播放的第一首不会被打断。
 - 第二首会出现在即将播放队列里。
 - 手机页和大屏页都会无刷新同步。
-- 切到手机页歌单 tab 后，可以用 `重唱` 让当前歌曲从头播放，也可以用 `切歌` 跳到下一首。
+- 切到手机页歌单 tab 后，`置顶` 应直接执行；`重唱` 和 `切歌` 应先弹确认，再重头播放或跳到下一首。
 
 ## 中文 2. 大屏 YouTube 播放器测试
 
 这一块测试 production 上的 YouTube IFrame Player API。
 
-1. 第一首歌出现在 display 页面后，先观察播放器是否自动尝试播放；如果浏览器策略拦截，再点击底部 `开始 K 歌`。
+1. 第一首歌出现在 display 页面后，先观察播放器是否自动尝试播放；如果浏览器策略拦截，再点击播放器画面尝试播放。
 2. 预期：
 
 - YouTube iframe 初始化参数应包含 `autoplay=1`。
 - YouTube 播放器会自动尝试播放；如果当前浏览器允许带声音 autoplay，应直接开始播放。
 - app 只会在 YouTube 真正进入播放状态后发送 `PLAYER_STARTED`。
-- 如果浏览器阻止自动播放，大屏会显示 autoplay/browser 提示；这时点击底部 `开始 K 歌`，不要依赖 YouTube 中间的 play overlay。
-- YouTube 原生 controls/fullscreen/settings 应尽量隐藏；`开始 K 歌`、`下一首`、清晰度和进度/seek 控制由 app 底部控制栏提供。
-- 清晰度菜单默认是 `1080p`；改成其他清晰度后，刷新或切到下一首仍应保留该选择。
-- 大屏底部应显示小号 YouTube search quota 估算，例如 `今日搜索剩余 49/50 · PT 00:00 重置`。
+- 如果浏览器阻止自动播放，大屏会显示 autoplay/browser 提示；这时点击播放器画面尝试播放。
+- YouTube 原生 controls/fullscreen/settings 应尽量隐藏；`下一首`、清晰度和加大的居中进度/seek 控制由 app 底部控制栏提供。
+- 清晰度菜单默认首选 `1080p`；改成其他清晰度后，刷新或切到下一首仍应保留该选择。菜单应显示当前视频实际可用的具体档位，例如 `1080p`、`720p`、`480p`，不应显示 `最高`。
+- 如果首选 `1080p` 但当前视频最高只有 `720p`，菜单当前值应显示实际生效的 `720p`，同时保留 `1080p` 作为后续视频的首选。
+- 大屏底部应显示小号 YouTube search quota 估算，例如 `今日搜索剩余 49/50 · 03:00 EDT 重置`，时间应按当前浏览器本地时区格式化。
 
 3. 用 display 页的 `下一首` 按钮做快速切歌测试。
 4. 预期：
 
 - 当前歌会标记为 completed。
 - 下一首 queued 歌会变成当前播放。
-- Display 会自动尝试播放下一首，新 iframe 仍应带 `autoplay=1` 和上一次选择的清晰度参数。
+- Display 会自动尝试播放下一首，新 iframe 仍应带 `autoplay=1` 和上一次选择的首选清晰度参数。
 
 5. 如果想测真实视频结束事件，可以找一首较短的视频，让它自然播完。
 6. 预期：
@@ -387,13 +390,13 @@ Invoke-RestMethod `
 - Mobile Safari：扫码进入 mobile 页，搜索、预览、点歌、歌单操作。
 - Android Chrome：扫码进入 mobile 页，搜索、预览、点歌、歌单操作。
 - iPad Safari：横竖屏切换、mobile 页排版、YouTube iframe 行为。
-- Desktop Chrome：display 页播放、二维码、复制链接、自动切歌。
+- Desktop Chrome：display 页播放、二维码/扫码链接、自动切歌。
 
 每个设备至少测一遍：
 
 1. 创建新房间。
 2. 手机页搜索并添加两首歌。
-3. 大屏点击 `开始 K 歌`。
+3. 大屏观察自动播放；如果浏览器拦截，点击播放器画面尝试播放。
 4. 大屏点击 `下一首`。
 5. 打开 debug 页确认 snapshot 和队列状态。
 
@@ -419,7 +422,7 @@ Invoke-RestMethod `
 - 手机页点歌后停留在搜索页，大屏无需刷新就更新。
 - 手机页歌单 tab 可以远程切歌和重唱。
 - 同一个 room 的两个客户端能同步。
-- 大屏 `开始 K 歌` 能启动 YouTube 播放。
+- 大屏能自动尝试启动 YouTube 播放；浏览器拦截时有可理解的提示。
 - YouTube 播放开始后，房间状态反映 `PLAYER_STARTED`。
 - `下一首` 能切到下一首 queued 歌。
 - YouTube 视频自然结束也能推进队列。
@@ -519,7 +522,9 @@ https://ktv-assistant.bradwang1995.workers.dev/room/<roomId>/mobile
 - The first 8 results are shown by default; scrolling to the bottom loads more from the current response cache, up to 40, without another search API call.
 - Users can choose `歌名 / 歌手` and use the pill-shaped `带原唱` toggle; search settings and result count should remain sticky while scrolling.
 - Top results prioritize the searched song title or artist itself; KTV/karaoke results should remain the highest-priority version, then `带原唱` affects lyric/MV/lyrics ranking.
+- For short song queries, title matches should outrank unrelated KTV/accompaniment results. For example, searching `依赖` should keep `离开我的依赖` lyrics/original-vocal/accompaniment results ahead of unrelated titles such as `唯一`.
 - Only one candidate card mounts a YouTube preview iframe at a time; inactive candidates show thumbnails.
+- Candidate preview should start by selecting the card, without an extra play button. Preview iframes should request 480p and should avoid triggering YouTube hover chrome as much as possible.
 - Selecting a candidate highlights it, and `已选中` / `已在歌单` should appear as bottom-right overlay tags without pushing card content down.
 - Tapping or playing a candidate preview iframe should select that candidate first.
 - Tapping outside the result grid should stop the active preview.
@@ -536,7 +541,7 @@ https://ktv-assistant.bradwang1995.workers.dev/room/<roomId>/mobile
 - The display page updates without refresh.
 - The first song becomes the current song.
 - The queue count updates.
-- The QR code remains visible and should not cover YouTube's top-right playback/settings area.
+- The QR code remains visible and should not cover YouTube's top-right playback/settings area. The `扫码点歌` title and QR card should open the mobile page in a new tab, without copy or `打开手机页` buttons.
 
 12. Add a second song from the mobile page.
 13. Expected queue behavior:
@@ -544,29 +549,30 @@ https://ktv-assistant.bradwang1995.workers.dev/room/<roomId>/mobile
 - The current song is not interrupted.
 - The second song appears as upcoming.
 - Queue changes sync to both display and mobile without refresh.
-- On the mobile queue tab, `重唱` restarts the current song and `切歌` advances to the next song.
+- On the mobile queue tab, `置顶` should run immediately; `重唱` and `切歌` should show confirmation before restarting or advancing.
 
 ## English 2. Display Player Test
 
 This tests the production YouTube IFrame Player API path.
 
-1. After the first song appears on the display page, first observe whether the player attempts autoplay; if browser policy blocks it, click the bottom `开始 K 歌` button.
+1. After the first song appears on the display page, first observe whether the player attempts autoplay; if browser policy blocks it, click the player surface to try playback.
 2. Expected behavior:
 
 - The YouTube iframe initializes with `autoplay=1`.
 - The YouTube player attempts to start automatically; if the browser allows audible autoplay, playback starts directly.
 - The app sends `PLAYER_STARTED` only after YouTube reports that playback has actually started.
-- If autoplay is blocked, the display shows a browser/autoplay warning; click the bottom `开始 K 歌` button instead of relying on the YouTube center play overlay.
-- YouTube native controls/fullscreen/settings should be hidden as much as possible; `开始 K 歌`, `下一首`, quality, and progress/seek controls should be app-owned controls in the bottom bar.
-- The quality selector defaults to `1080p`; after changing it, refresh or advance to the next song and confirm the same quality is retained.
-- The display footer should show a small YouTube search quota estimate, such as `今日搜索剩余 49/50 · PT 00:00 重置`.
+- If autoplay is blocked, the display shows a browser/autoplay warning; click the player surface to try playback.
+- YouTube native controls/fullscreen/settings should be hidden as much as possible; `下一首`, quality, and the larger centered progress/seek control should be app-owned controls in the bottom bar.
+- The quality selector prefers `1080p` by default; after changing it, refresh or advance to the next song and confirm the same preferred quality is retained. The menu should show the current video's concrete available qualities, such as `1080p`, `720p`, or `480p`, and should not show `最高`.
+- If the preferred quality is `1080p` but the current video only supports `720p`, the current menu value should show the effective `720p` while keeping `1080p` as the preference for later videos.
+- The display footer should show a small YouTube search quota estimate, such as `今日搜索剩余 49/50 · 03:00 EDT 重置`, formatted in the browser's local timezone.
 
 3. Use the display page `下一首` button for a fast auto-advance test.
 4. Expected behavior:
 
 - The current song is marked complete.
 - The next queued song becomes current.
-- The display attempts to play the next song automatically, and the new iframe still carries `autoplay=1` plus the saved quality parameter.
+- The display attempts to play the next song automatically, and the new iframe still carries `autoplay=1` plus the saved preferred quality parameter.
 
 5. For a true end-of-video test, let a short video finish naturally.
 6. Expected behavior:
@@ -827,13 +833,13 @@ These items require real device validation:
 - Mobile Safari: QR scan into mobile page, search, preview, add song, queue actions.
 - Android Chrome: QR scan into mobile page, search, preview, add song, queue actions.
 - iPad Safari: orientation changes, mobile layout, YouTube iframe behavior.
-- Desktop Chrome: display playback, QR code, link copying, auto-advance.
+- Desktop Chrome: display playback, QR code / scan-song link, auto-advance.
 
 For each device, run at least:
 
 1. Create a fresh room.
 2. Search and add two songs from mobile.
-3. Click `开始 K 歌` on display.
+3. Observe display autoplay; if the browser blocks it, click the player surface to try playback.
 4. Click `下一首` on display.
 5. Open the debug page and confirm snapshot / queue state.
 
@@ -859,7 +865,7 @@ A production test pass means:
 - Adding songs from mobile keeps the search page open and updates display without refresh.
 - Mobile queue can remotely skip and restart the current song.
 - Two clients in the same room stay synchronized.
-- Display `开始 K 歌` starts YouTube playback.
+- Display attempts to start YouTube playback automatically and shows an understandable prompt if the browser blocks autoplay.
 - `PLAYER_STARTED` is reflected in the room after playback starts.
 - `下一首` advances to the next queued song.
 - Natural YouTube video ending also advances the room.
