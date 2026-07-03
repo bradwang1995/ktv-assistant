@@ -13,7 +13,11 @@ import { useQuery } from "@tanstack/react-query";
 import { QRCodeSVG } from "qrcode.react";
 import { type ChangeEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import { FullscreenPlayer, type FullscreenPlayerHandle } from "../components/FullscreenPlayer";
+import {
+  FullscreenPlayer,
+  type FullscreenPlayerHandle,
+  type PlayerProgress,
+} from "../components/FullscreenPlayer";
 import { useRoomSocket, type SocketStatus } from "../hooks/useRoomSocket";
 import { fetchYouTubeQuotaStatus } from "../lib/apiClient";
 import { copyTextToClipboard } from "../lib/clipboard";
@@ -40,6 +44,12 @@ export default function DisplayPage() {
   const [playbackQuality, setPlaybackQuality] = useState<YouTubePlaybackQuality>(() =>
     readPreferredYouTubePlaybackQuality(),
   );
+  const [playerProgress, setPlayerProgress] = useState<PlayerProgress>({
+    currentTime: 0,
+    duration: 0,
+  });
+  const [seekSeconds, setSeekSeconds] = useState(0);
+  const [isSeeking, setIsSeeking] = useState(false);
   const playerHandleRef = useRef<FullscreenPlayerHandle | null>(null);
   const lastAutoPlayItemIdRef = useRef<string | null>(null);
   const handledLoadingPlaybackKeyRef = useRef<string | null>(null);
@@ -101,6 +111,9 @@ export default function DisplayPage() {
   useEffect(() => {
     if (!currentItem) {
       lastAutoPlayItemIdRef.current = null;
+      setPlayerProgress({ currentTime: 0, duration: 0 });
+      setSeekSeconds(0);
+      setIsSeeking(false);
       return;
     }
 
@@ -164,6 +177,31 @@ export default function DisplayPage() {
     setPlaybackQuality(nextQuality);
     savePreferredYouTubePlaybackQuality(nextQuality);
   }, []);
+
+  const handleProgress = useCallback(
+    (progress: PlayerProgress) => {
+      setPlayerProgress(progress);
+
+      if (!isSeeking) {
+        setSeekSeconds(progress.currentTime);
+      }
+    },
+    [isSeeking],
+  );
+
+  const handleSeekChange = (seconds: number) => {
+    setSeekSeconds(seconds);
+  };
+
+  const commitSeek = () => {
+    if (!currentItem || !Number.isFinite(seekSeconds)) {
+      setIsSeeking(false);
+      return;
+    }
+
+    playerHandleRef.current?.seekTo(seekSeconds);
+    setIsSeeking(false);
+  };
 
   const handleNext = () => {
     if (!currentItem) return;
@@ -241,6 +279,7 @@ export default function DisplayPage() {
               onPlaybackError={handlePlaybackError}
               onAutoplayBlocked={handleAutoplayBlocked}
               onPlaybackQualityChange={handlePlaybackQualityChange}
+              onProgress={handleProgress}
             />
           ) : (
             <div className="grid h-full min-h-[420px] place-items-center px-6 text-center">
@@ -284,6 +323,15 @@ export default function DisplayPage() {
                   isLoading={quotaQuery.isPending}
                   isError={quotaQuery.isError}
                 />
+                {currentItem ? (
+                  <PlayerProgressControl
+                    currentTime={isSeeking ? seekSeconds : playerProgress.currentTime}
+                    duration={playerProgress.duration}
+                    onSeekStart={() => setIsSeeking(true)}
+                    onSeekChange={handleSeekChange}
+                    onSeekCommit={commitSeek}
+                  />
+                ) : null}
               </div>
             </div>
             <div className="flex flex-wrap items-center gap-2">
@@ -332,6 +380,66 @@ export default function DisplayPage() {
       </div>
     </main>
   );
+}
+
+function PlayerProgressControl({
+  currentTime,
+  duration,
+  onSeekStart,
+  onSeekChange,
+  onSeekCommit,
+}: {
+  currentTime: number;
+  duration: number;
+  onSeekStart: () => void;
+  onSeekChange: (seconds: number) => void;
+  onSeekCommit: () => void;
+}) {
+  const safeDuration = Number.isFinite(duration) ? Math.max(duration, 0) : 0;
+  const safeCurrentTime = Math.min(
+    Number.isFinite(currentTime) ? Math.max(currentTime, 0) : 0,
+    safeDuration || 0,
+  );
+  const disabled = safeDuration <= 0;
+
+  return (
+    <div className="mt-3 flex items-center gap-2 text-xs text-slate-300">
+      <span className="w-10 shrink-0 tabular-nums">{formatPlayerTime(safeCurrentTime)}</span>
+      <input
+        type="range"
+        min={0}
+        max={Math.max(Math.floor(safeDuration), 0)}
+        step={1}
+        value={disabled ? 0 : Math.floor(safeCurrentTime)}
+        disabled={disabled}
+        onPointerDown={onSeekStart}
+        onPointerUp={onSeekCommit}
+        onBlur={onSeekCommit}
+        onKeyDown={onSeekStart}
+        onKeyUp={onSeekCommit}
+        onChange={(event) => {
+          onSeekStart();
+          onSeekChange(Number(event.target.value));
+        }}
+        aria-label="播放进度"
+        className="min-w-0 flex-1 accent-teal-400 disabled:opacity-40"
+      />
+      <span className="w-10 shrink-0 text-right tabular-nums">{formatPlayerTime(safeDuration)}</span>
+    </div>
+  );
+}
+
+function formatPlayerTime(seconds: number) {
+  const totalSeconds = Math.max(Math.floor(seconds), 0);
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const remainingSeconds = totalSeconds % 60;
+
+  if (hours > 0) {
+    return `${hours}:${String(minutes).padStart(2, "0")}:${String(remainingSeconds).padStart(2, "0")}`;
+  }
+
+  return `${minutes}:${String(remainingSeconds).padStart(2, "0")}`;
 }
 
 function YouTubeQuotaBadge({

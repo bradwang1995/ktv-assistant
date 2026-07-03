@@ -31,11 +31,18 @@ interface FullscreenPlayerProps {
   onPlaybackError: (errorCode: number) => void;
   onAutoplayBlocked: () => void;
   onPlaybackQualityChange?: (quality: YouTubePlaybackQuality) => void;
+  onProgress?: (progress: PlayerProgress) => void;
 }
 
 export interface FullscreenPlayerHandle {
   play: () => void;
   restart: () => void;
+  seekTo: (seconds: number) => void;
+}
+
+export interface PlayerProgress {
+  currentTime: number;
+  duration: number;
 }
 
 export const FullscreenPlayer = forwardRef<FullscreenPlayerHandle, FullscreenPlayerProps>(
@@ -51,6 +58,7 @@ export const FullscreenPlayer = forwardRef<FullscreenPlayerHandle, FullscreenPla
       onPlaybackError,
       onAutoplayBlocked,
       onPlaybackQualityChange,
+      onProgress,
     },
     ref,
   ) {
@@ -64,6 +72,7 @@ export const FullscreenPlayer = forwardRef<FullscreenPlayerHandle, FullscreenPla
   const playRetryTimeoutsRef = useRef<number[]>([]);
   const qualityRetryTimeoutsRef = useRef<number[]>([]);
   const qualityChangeReportTimeoutRef = useRef<number | null>(null);
+  const progressIntervalRef = useRef<number | null>(null);
   const canReportQualityChangeRef = useRef(false);
   const playbackQualityRef = useRef(playbackQuality);
   const callbacksRef = useRef({
@@ -72,6 +81,7 @@ export const FullscreenPlayer = forwardRef<FullscreenPlayerHandle, FullscreenPla
     onPlaybackError,
     onAutoplayBlocked,
     onPlaybackQualityChange,
+    onProgress,
   });
   const [status, setStatus] = useState<PlayerStatus>("loading");
   const [errorCode, setErrorCode] = useState<number | null>(null);
@@ -99,6 +109,31 @@ export const FullscreenPlayer = forwardRef<FullscreenPlayerHandle, FullscreenPla
 
     window.clearTimeout(qualityChangeReportTimeoutRef.current);
     qualityChangeReportTimeoutRef.current = null;
+  };
+
+  const clearProgressInterval = () => {
+    if (progressIntervalRef.current === null) {
+      return;
+    }
+
+    window.clearInterval(progressIntervalRef.current);
+    progressIntervalRef.current = null;
+  };
+
+  const reportProgress = (player: YouTubePlayer) => {
+    const currentTime = player.getCurrentTime?.() ?? 0;
+    const duration = player.getDuration?.() ?? 0;
+
+    callbacksRef.current.onProgress?.({
+      currentTime: Number.isFinite(currentTime) ? Math.max(currentTime, 0) : 0,
+      duration: Number.isFinite(duration) ? Math.max(duration, 0) : 0,
+    });
+  };
+
+  const startProgressInterval = (player: YouTubePlayer) => {
+    clearProgressInterval();
+    reportProgress(player);
+    progressIntervalRef.current = window.setInterval(() => reportProgress(player), 1_000);
   };
 
   const requestPlay = (player: YouTubePlayer) => {
@@ -164,6 +199,14 @@ export const FullscreenPlayer = forwardRef<FullscreenPlayerHandle, FullscreenPla
         pendingPlayRef.current = true;
       }
     },
+    seekTo(seconds: number) {
+      if (!Number.isFinite(seconds) || !playerRef.current) {
+        return;
+      }
+
+      playerRef.current.seekTo?.(Math.max(seconds, 0), true);
+      reportProgress(playerRef.current);
+    },
   }));
 
   useEffect(() => {
@@ -173,12 +216,14 @@ export const FullscreenPlayer = forwardRef<FullscreenPlayerHandle, FullscreenPla
       onPlaybackError,
       onAutoplayBlocked,
       onPlaybackQualityChange,
+      onProgress,
     };
   }, [
     onAutoplayBlocked,
     onPlaybackEnded,
     onPlaybackError,
     onPlaybackQualityChange,
+    onProgress,
     onPlaybackStarted,
   ]);
 
@@ -201,6 +246,7 @@ export const FullscreenPlayer = forwardRef<FullscreenPlayerHandle, FullscreenPla
     clearQualityChangeReportTimeout();
     pendingPlayRef.current = autoPlay || playRequestId > 0;
     lastPlayRequestRef.current = playRequestId;
+    callbacksRef.current.onProgress?.({ currentTime: 0, duration: 0 });
     setStatus("loading");
     setErrorCode(null);
 
@@ -226,7 +272,8 @@ export const FullscreenPlayer = forwardRef<FullscreenPlayerHandle, FullscreenPla
           videoId,
           playerVars: {
             autoplay: autoPlay || playRequestId > 0 ? 1 : 0,
-            controls: 1,
+            controls: 0,
+            disablefs: 1,
             enablejsapi: 1,
             iv_load_policy: 3,
             playsinline: 1,
@@ -256,6 +303,7 @@ export const FullscreenPlayer = forwardRef<FullscreenPlayerHandle, FullscreenPla
       clearPlayRetryTimeouts();
       clearQualityRetryTimeouts();
       clearQualityChangeReportTimeout();
+      clearProgressInterval();
       playerRef.current?.destroy?.();
       playerRef.current = null;
       shell.replaceChildren();
@@ -270,6 +318,7 @@ export const FullscreenPlayer = forwardRef<FullscreenPlayerHandle, FullscreenPla
       }
 
       applyPlaybackQuality(event.target);
+      startProgressInterval(event.target);
       qualityChangeReportTimeoutRef.current = window.setTimeout(() => {
         canReportQualityChangeRef.current = true;
       }, 4_000);
@@ -288,6 +337,7 @@ export const FullscreenPlayer = forwardRef<FullscreenPlayerHandle, FullscreenPla
       if (event.data === YOUTUBE_PLAYER_STATE.PLAYING) {
         pendingPlayRef.current = false;
         clearPlayRetryTimeouts();
+        startProgressInterval(event.target);
         setStatus("playing");
 
         if (!startedRef.current) {
@@ -299,6 +349,8 @@ export const FullscreenPlayer = forwardRef<FullscreenPlayerHandle, FullscreenPla
 
       if (event.data === YOUTUBE_PLAYER_STATE.ENDED) {
         clearPlayRetryTimeouts();
+        reportProgress(event.target);
+        clearProgressInterval();
         setStatus("ended");
 
         if (!endedRef.current) {
@@ -309,11 +361,13 @@ export const FullscreenPlayer = forwardRef<FullscreenPlayerHandle, FullscreenPla
       }
 
       if (event.data === YOUTUBE_PLAYER_STATE.BUFFERING) {
+        startProgressInterval(event.target);
         setStatus("buffering");
         return;
       }
 
       if (event.data === YOUTUBE_PLAYER_STATE.PAUSED) {
+        reportProgress(event.target);
         setStatus("paused");
         return;
       }
@@ -325,6 +379,7 @@ export const FullscreenPlayer = forwardRef<FullscreenPlayerHandle, FullscreenPla
 
     function handleError(event: YouTubePlayerErrorEvent) {
       clearPlayRetryTimeouts();
+      clearProgressInterval();
       setErrorCode(event.data);
       setStatus("error");
       callbacksRef.current.onPlaybackError(event.data);
@@ -349,6 +404,7 @@ export const FullscreenPlayer = forwardRef<FullscreenPlayerHandle, FullscreenPla
     function handleAutoplayBlocked() {
       pendingPlayRef.current = false;
       clearPlayRetryTimeouts();
+      clearProgressInterval();
       setStatus("blocked");
       callbacksRef.current.onAutoplayBlocked();
     }
