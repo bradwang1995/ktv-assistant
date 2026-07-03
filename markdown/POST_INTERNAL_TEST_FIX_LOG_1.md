@@ -8,7 +8,7 @@
 | ID | Priority | Area | Request | Status |
 | --- | --- | --- | --- | --- |
 | PIT-01 | P1 | Mobile search cards | Move `已选中` / `已在歌单` into overlay pill tags so card content does not shift. | Done |
-| PIT-02 | P0 | Search ranking | Restore KTV/karaoke versions as top priority, then accompaniment/lyrics video, while still respecting original-vocal intent. | Planned |
+| PIT-02 | P0 | Search ranking | Restore KTV/karaoke versions as top priority, then accompaniment/lyrics video, while still respecting original-vocal intent. | Done |
 | PIT-03 | P1 | Mobile preview | Remove redundant preview buttons; selecting a result should auto-preview it. | Done |
 | PIT-04 | P1 | Create page | Remove the `扫码点歌` button from the create-room page because no room exists yet. | Done |
 | PIT-05 | P1 | Add-song feedback | Replace per-card notification with a page-level toast and a visual flight animation into the queue/count area. | Done |
@@ -21,7 +21,7 @@
 | PIT-12 | P1 | Display quality | Keep the app quality selector authoritative and avoid mismatched YouTube quality chrome. | Planned |
 | PIT-13 | P0 | Room lifecycle | Auto-clean inactive rooms after 5 minutes without activity. | Planned |
 | PIT-14 | P0 | Room heartbeat | Treat open display/mobile pages as active by sending/receiving periodic heartbeats. | Planned |
-| PIT-15 | P1 | Search quota | Show remaining YouTube Search API calls using a backend estimate and reset it on the correct daily schedule. | Planned |
+| PIT-15 | P1 | Search quota | Show remaining YouTube Search API calls using a backend estimate and reset it on the correct daily schedule. | Done |
 
 ## Implementation Groups
 
@@ -49,6 +49,9 @@
 ## Verification Notes
 
 - 2026-07-03 group 1 mobile/create-page UX polish:
+  - `npm run typecheck` passed.
+- 2026-07-03 group 2 search ranking and quota visibility:
+  - `npm run test -- worker/scoring.test.ts worker/youtubeQuota.test.ts` passed.
   - `npm run typecheck` passed.
 
 ## Commit Log

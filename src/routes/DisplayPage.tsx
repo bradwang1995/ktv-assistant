@@ -9,11 +9,13 @@ import {
   Wifi,
   WifiOff,
 } from "lucide-react";
+import { useQuery } from "@tanstack/react-query";
 import { QRCodeSVG } from "qrcode.react";
 import { type ChangeEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { FullscreenPlayer, type FullscreenPlayerHandle } from "../components/FullscreenPlayer";
 import { useRoomSocket, type SocketStatus } from "../hooks/useRoomSocket";
+import { fetchYouTubeQuotaStatus } from "../lib/apiClient";
 import { copyTextToClipboard } from "../lib/clipboard";
 import { getCurrentItem, getQueuedItems } from "../lib/roomReducer";
 import { playerEnded, playerStarted, useRoomSnapshot } from "../lib/roomState";
@@ -41,6 +43,13 @@ export default function DisplayPage() {
   const playerHandleRef = useRef<FullscreenPlayerHandle | null>(null);
   const lastAutoPlayItemIdRef = useRef<string | null>(null);
   const handledLoadingPlaybackKeyRef = useRef<string | null>(null);
+  const quotaQuery = useQuery({
+    queryKey: ["youtube-quota-status"],
+    queryFn: fetchYouTubeQuotaStatus,
+    staleTime: 60_000,
+    refetchInterval: 60_000,
+    retry: false,
+  });
 
   const mobileUrl = useMemo(() => {
     const path = `/room/${roomId}/mobile`;
@@ -270,6 +279,11 @@ export default function DisplayPage() {
                 {playerIssue ? (
                   <p className="mt-2 text-sm font-medium text-rose-200">{playerIssue}</p>
                 ) : null}
+                <YouTubeQuotaBadge
+                  status={quotaQuery.data}
+                  isLoading={quotaQuery.isPending}
+                  isError={quotaQuery.isError}
+                />
               </div>
             </div>
             <div className="flex flex-wrap items-center gap-2">
@@ -317,6 +331,40 @@ export default function DisplayPage() {
         </section>
       </div>
     </main>
+  );
+}
+
+function YouTubeQuotaBadge({
+  status,
+  isLoading,
+  isError,
+}: {
+  status:
+    | {
+        dailyLimit: number;
+        remaining: number;
+        exhausted: boolean;
+      }
+    | undefined;
+  isLoading: boolean;
+  isError: boolean;
+}) {
+  if (isLoading) {
+    return <p className="mt-2 text-xs text-slate-400">搜索额度加载中</p>;
+  }
+
+  if (isError || !status) {
+    return <p className="mt-2 text-xs text-slate-400">搜索额度暂不可用</p>;
+  }
+
+  return (
+    <p
+      className={`mt-2 text-xs font-medium ${
+        status.exhausted ? "text-amber-200" : "text-slate-400"
+      }`}
+    >
+      今日搜索剩余 {status.remaining}/{status.dailyLimit} · PT 00:00 重置
+    </p>
   );
 }
 

@@ -13,7 +13,7 @@ import { rankSearchResultsForQuery } from "./scoring";
 import { buildSearchQueryFamily } from "./searchFamily";
 import type { Env } from "./types";
 import { searchYouTubeVideos } from "./youtubeSearch";
-import { getAvailableYouTubeSearchCalls, recordYouTubeSearchCalls } from "./youtubeQuota";
+import { getYouTubeSearchQuotaStatus, recordYouTubeSearchCalls } from "./youtubeQuota";
 
 const DEFAULT_YOUTUBE_DAILY_SEARCH_LIMIT = 50;
 const DEFAULT_YOUTUBE_SEARCH_CALLS_PER_FILL = 1;
@@ -149,7 +149,8 @@ async function searchLiveVideos({
   env: Env;
 }) {
   const dailyLimit = getYouTubeDailySearchLimit(env);
-  const remainingBefore = await getAvailableYouTubeSearchCalls(env.SEARCH_CACHE, dailyLimit);
+  const quotaBefore = await getYouTubeSearchQuotaStatus(env.SEARCH_CACHE, dailyLimit);
+  const remainingBefore = quotaBefore.remaining;
   const perFillBudget = cacheFill ? getYouTubeSearchCallsPerFill(env) : 1;
   const maxSearchCalls = Math.min(perFillBudget, remainingBefore);
 
@@ -170,9 +171,12 @@ async function searchLiveVideos({
         sourceQueries: [],
         quota: {
           dailyLimit,
+          used: quotaBefore.used,
           remainingBefore,
           remainingAfter: 0,
           exhausted: true,
+          resetAt: quotaBefore.resetAt,
+          resetTimeZone: quotaBefore.resetTimeZone,
         },
       },
     } satisfies SearchResponse;
@@ -190,7 +194,8 @@ async function searchLiveVideos({
   });
   const usedSearchCalls = response.cacheMeta?.sourceQueryCount ?? 0;
   await recordYouTubeSearchCalls(env.SEARCH_CACHE, usedSearchCalls, dailyLimit);
-  const remainingAfter = Math.max(remainingBefore - usedSearchCalls, 0);
+  const quotaAfter = await getYouTubeSearchQuotaStatus(env.SEARCH_CACHE, dailyLimit);
+  const remainingAfter = quotaAfter.remaining;
 
   return {
     ...response,
@@ -201,9 +206,12 @@ async function searchLiveVideos({
       servedFromExpandedCache: false,
       quota: {
         dailyLimit,
+        used: quotaAfter.used,
         remainingBefore,
         remainingAfter,
         exhausted: remainingAfter <= 0,
+        resetAt: quotaAfter.resetAt,
+        resetTimeZone: quotaAfter.resetTimeZone,
       },
     },
   } satisfies SearchResponse;
@@ -222,7 +230,7 @@ function limitSearchResponse(response: SearchResponse, limit: number): SearchRes
   };
 }
 
-function getYouTubeDailySearchLimit(env: Env) {
+export function getYouTubeDailySearchLimit(env: Env) {
   return parsePositiveInteger(env.YOUTUBE_SEARCH_DAILY_LIMIT, DEFAULT_YOUTUBE_DAILY_SEARCH_LIMIT);
 }
 

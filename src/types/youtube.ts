@@ -26,10 +26,23 @@ export interface SearchResponse {
     sourceQueries?: string[];
     quota?: {
       dailyLimit: number;
+      used?: number;
       remainingBefore: number;
       remainingAfter: number;
       exhausted: boolean;
+      resetAt?: string;
+      resetTimeZone?: string;
     };
     prunedResultCount?: number;
   };
+}
+
+export interface YouTubeQuotaStatus {
+  dailyLimit: number;
+  used: number;
+  remaining: number;
+  exhausted: boolean;
+  resetAt: string;
+  resetTimeZone: "America/Los_Angeles";
+  updatedAt: string;
 }

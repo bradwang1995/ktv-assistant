@@ -59,7 +59,7 @@ describe("search scoring", () => {
     expect(results[0].score).toBeGreaterThan(results[1].score);
   });
 
-  it("rewards lyric-video signals when original vocals are requested", () => {
+  it("keeps KTV-like results ahead even when original vocals are requested", () => {
     const results = rankSearchResultsForQuery(
       [
         {
@@ -79,8 +79,33 @@ describe("search scoring", () => {
       { includeOriginalVocal: true },
     );
 
-    expect(results[0].videoId).toBe("lyrics");
-    expect(results[0].reasons).toContain("title contains lyric video");
+    expect(results[0].videoId).toBe("karaoke");
+    expect(results[0].reasons).toContain("title contains KTV");
+    expect(results[1].reasons).toContain("title contains lyric video");
+  });
+
+  it("uses original-vocal intent to rank non-KTV results", () => {
+    const results = rankSearchResultsForQuery(
+      [
+        {
+          videoId: "plain",
+          title: "后来 audio",
+          channelTitle: "Fan Upload",
+          durationSeconds: 280,
+        },
+        {
+          videoId: "official",
+          title: "后来 official MV 原唱",
+          channelTitle: "Official Channel",
+          durationSeconds: 280,
+        },
+      ],
+      "后来",
+      { includeOriginalVocal: true },
+    );
+
+    expect(results[0].videoId).toBe("official");
+    expect(results[0].reasons).toContain("title contains 原唱");
   });
 
   it("prioritizes artist metadata in artist search mode", () => {

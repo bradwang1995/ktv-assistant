@@ -1,6 +1,6 @@
 import type { ApiErrorResponse, CreateRoomResponse } from "../types/api";
 import type { RoomSnapshot } from "../types/room";
-import type { SearchResponse, SearchType } from "../types/youtube";
+import type { SearchResponse, SearchType, YouTubeQuotaStatus } from "../types/youtube";
 
 export class ApiClientError extends Error {
   status: number;
@@ -70,6 +70,16 @@ export async function searchVideosViaApi(
   });
 
   return parseJsonResponse<SearchResponse>(response);
+}
+
+export async function fetchYouTubeQuotaStatus() {
+  const response = await fetch("/api/youtube/quota", {
+    headers: {
+      accept: "application/json",
+    },
+  });
+
+  return parseJsonResponse<YouTubeQuotaStatus>(response);
 }
 
 async function parseJsonResponse<T>(response: Response): Promise<T> {

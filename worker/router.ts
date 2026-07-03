@@ -9,9 +9,10 @@ import {
 import { apiError, jsonResponse } from "./json";
 import { checkRateLimit } from "./rateLimit";
 import { createRoomId, isValidRoomId } from "./roomIds";
-import { getSearchRecommendations, searchVideos } from "./searchService";
+import { getSearchRecommendations, getYouTubeDailySearchLimit, searchVideos } from "./searchService";
 import type { Env } from "./types";
 import type { SearchType } from "../src/types/youtube";
+import { getYouTubeSearchQuotaStatus } from "./youtubeQuota";
 
 const CREATE_ROOM_ATTEMPTS = 3;
 const DEFAULT_SEARCH_RATE_LIMIT_PER_MINUTE = 20;
@@ -63,6 +64,14 @@ export async function handleApiRequest(request: Request, env: Env) {
     }
 
     return cleanupRoom(request, env, route.roomId);
+  }
+
+  if (route.name === "youtubeQuota") {
+    if (request.method !== "GET") {
+      return apiError(405, "METHOD_NOT_ALLOWED", "Use GET to read YouTube quota status.");
+    }
+
+    return getYoutubeQuota(env);
   }
 
   return apiError(404, "NOT_FOUND", "API route not found.");
@@ -268,6 +277,11 @@ async function cleanupRoom(request: Request, env: Env, roomId: string) {
   return jsonResponse((await getRoomSnapshotFromD1(env.DB, roomId)) ?? cleaned);
 }
 
+async function getYoutubeQuota(env: Env) {
+  const dailyLimit = getYouTubeDailySearchLimit(env);
+  return jsonResponse(await getYouTubeSearchQuotaStatus(env.SEARCH_CACHE, dailyLimit));
+}
+
 function matchApiRoute(pathname: string) {
   const parts = pathname.split("/").filter(Boolean);
 
@@ -309,6 +323,10 @@ function matchApiRoute(pathname: string) {
     parts[3] === "cleanup"
   ) {
     return { name: "roomCleanup" as const, roomId: parts[2] };
+  }
+
+  if (parts.length === 3 && parts[0] === "api" && parts[1] === "youtube" && parts[2] === "quota") {
+    return { name: "youtubeQuota" as const };
   }
 
   return null;

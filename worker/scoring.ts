@@ -16,30 +16,31 @@ interface SearchScoringOptions {
   artist?: string;
 }
 
-const KARAOKE_POSITIVE_SIGNALS = [
-  { text: "ktv", score: 10, reason: "title contains KTV" },
-  { text: "\u5361\u62c9ok", score: 10, reason: "title contains karaoke marker" },
-  { text: "\u4f34\u594f", score: 8, reason: "title contains instrumental marker" },
-  { text: "\u5b57\u5e55", score: 5, reason: "title contains subtitles marker" },
-  { text: "卡拉ok", score: 10, reason: "title contains 卡拉OK" },
-  { text: "伴奏", score: 8, reason: "title contains 伴奏" },
-  { text: "字幕", score: 5, reason: "title contains 字幕" },
-  { text: "karaoke", score: 5, reason: "title contains karaoke" },
-  { text: "instrumental", score: 4, reason: "title contains instrumental" },
+const KTV_PRIMARY_SIGNALS = [
+  { text: "ktv", score: 30, reason: "title contains KTV" },
+  { text: "卡拉ok", score: 30, reason: "title contains 卡拉OK" },
+  { text: "karaoke", score: 24, reason: "title contains karaoke" },
+];
+
+const ACCOMPANIMENT_SIGNALS = [
+  { text: "伴奏", score: 20, reason: "title contains 伴奏" },
+  { text: "instrumental", score: 16, reason: "title contains instrumental" },
+  { text: "字幕", score: 8, reason: "title contains 字幕" },
   { text: "pinyin", score: 3, reason: "title contains pinyin" },
 ];
 
-const ORIGINAL_VOCAL_POSITIVE_SIGNALS = [
-  { text: "lyric video", score: 12, reason: "title contains lyric video" },
-  { text: "lyrics", score: 10, reason: "title contains lyrics" },
-  { text: "lyric", score: 8, reason: "title contains lyric" },
-  { text: "\u6b4c\u8bcd", score: 10, reason: "title contains lyrics marker" },
-  { text: "歌词", score: 10, reason: "title contains 歌词" },
-  { text: "mv", score: 7, reason: "title contains MV" },
-  { text: "official", score: 5, reason: "title contains official" },
-  { text: "字幕", score: 5, reason: "title contains subtitles marker" },
-  { text: "ktv", score: 3, reason: "title contains KTV fallback" },
-  { text: "karaoke", score: 2, reason: "title contains karaoke fallback" },
+const LYRICS_VIDEO_SIGNALS = [
+  { text: "lyric video", score: 18, reason: "title contains lyric video" },
+  { text: "lyrics", score: 14, reason: "title contains lyrics" },
+  { text: "lyric", score: 12, reason: "title contains lyric" },
+  { text: "歌词", score: 14, reason: "title contains 歌词" },
+];
+
+const ORIGINAL_VOCAL_INTENT_SIGNALS = [
+  { text: "original", score: 10, reason: "title contains original vocal marker" },
+  { text: "原唱", score: 10, reason: "title contains 原唱" },
+  { text: "mv", score: 8, reason: "title contains MV" },
+  { text: "official", score: 6, reason: "title contains official" },
 ];
 
 const NEGATIVE_SIGNALS = [
@@ -65,11 +66,13 @@ export function scoreSearchResult(
   const channelTitle = normalizeQuery(result.channelTitle ?? "");
   const reasons: string[] = [];
   let score = 0;
-  const positiveSignals = options.includeOriginalVocal
-    ? ORIGINAL_VOCAL_POSITIVE_SIGNALS
-    : KARAOKE_POSITIVE_SIGNALS;
 
-  for (const signal of positiveSignals) {
+  for (const signal of [
+    ...KTV_PRIMARY_SIGNALS,
+    ...ACCOMPANIMENT_SIGNALS,
+    ...LYRICS_VIDEO_SIGNALS,
+    ...(options.includeOriginalVocal ? ORIGINAL_VOCAL_INTENT_SIGNALS : []),
+  ]) {
     if (haystack.includes(signal.text)) {
       score += signal.score;
       reasons.push(signal.reason);
