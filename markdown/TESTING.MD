@@ -1,6 +1,6 @@
 # Production 测试指南 / Production Testing Guide
 
-Last updated: 2026-07-02
+Last updated: 2026-07-03
 
 ## 中文版
 
@@ -77,12 +77,13 @@ https://ktv-assistant.bradwang1995.workers.dev/room/<roomId>/mobile
 
 - 搜索结果来自后端 `/api/rooms/:roomId/search`。
 - 默认先显示 8 条结果；滚动到底部后从当前响应缓存继续加载更多，最多 40 条，不应触发新的 search API call。
-- 可以选择 `歌名 / 歌手`，也可以打开或关闭 `带原唱`。
-- 前排结果优先匹配搜索的歌名或歌手本身；`带原唱` 会影响 lyric/MV/歌词结果排序，但不应压过歌名/歌手匹配。
+- 可以选择 `歌名 / 歌手`，也可以用 pill-shaped toggle 打开或关闭 `带原唱`；搜索设置和结果数量应在滚动时保持 sticky。
+- 前排结果优先匹配搜索的歌名或歌手本身；KTV/karaoke 版本应保持最高优先级，`带原唱` 再影响 lyric/MV/歌词结果排序。
 - 同一时间只有一个候选卡片挂载 YouTube 预览 iframe，其他候选显示封面。
-- 点选某个候选视频后，它会有选中态。
+- 点选某个候选视频后，它会有选中态，`已选中` / `已在歌单` 应是右下角 overlay tag，不应造成卡片内容下移。
 - 直接点击或播放候选视频预览时，也会先选中该候选。
-- 点击点歌按钮后仍停留在搜索页，并显示已加入播放列表的成功反馈。
+- 点击候选卡片外部后，当前 preview 应停止。
+- 点击点歌按钮后仍停留在搜索页，并显示页面顶部 toast 和飞向歌单计数的动画反馈。
 
 9. 刷新 mobile 页面。
 10. 预期：
@@ -116,8 +117,9 @@ https://ktv-assistant.bradwang1995.workers.dev/room/<roomId>/mobile
 - YouTube 播放器会自动尝试播放；如果当前浏览器允许带声音 autoplay，应直接开始播放。
 - app 只会在 YouTube 真正进入播放状态后发送 `PLAYER_STARTED`。
 - 如果浏览器阻止自动播放，大屏会显示 autoplay/browser 提示；这时点击底部 `开始 K 歌`，不要依赖 YouTube 中间的 play overlay。
-- `开始 K 歌` 和 `下一首` 按钮应位于播放器下方控制栏，不应遮挡 YouTube 进度条。
+- YouTube 原生 controls/fullscreen/settings 应尽量隐藏；`开始 K 歌`、`下一首`、清晰度和进度/seek 控制由 app 底部控制栏提供。
 - 清晰度菜单默认是 `1080p`；改成其他清晰度后，刷新或切到下一首仍应保留该选择。
+- 大屏底部应显示小号 YouTube search quota 估算，例如 `今日搜索剩余 49/50 · PT 00:00 重置`。
 
 3. 用 display 页的 `下一首` 按钮做快速切歌测试。
 4. 预期：
@@ -214,6 +216,17 @@ Invoke-RestMethod `
 
 预期：返回 `cached = true`，`results` 有 0 到 8 条，且不会调用 YouTube search quota。
 
+quota status smoke test：
+
+```powershell
+Invoke-RestMethod -Uri "$base/api/youtube/quota" | ConvertTo-Json -Depth 20
+```
+
+预期：
+
+- 返回 `dailyLimit`、`used`、`remaining`、`exhausted`、`resetAt` 和 `resetTimeZone`。
+- `resetTimeZone` 应为 `America/Los_Angeles`；YouTube daily quota 按 Pacific Time 午夜重置。
+
 ## 中文 4. WebSocket Smoke Test
 
 在任意 production 页面打开浏览器 DevTools console，执行：
@@ -247,7 +260,7 @@ ws.onclose = (event) => console.log("WS close", event.code, event.reason);
 预期：
 
 - `JOIN_ROOM` 返回 `ROOM_SNAPSHOT`。
-- `PING` 返回 `PONG`。
+- `PING` 返回 `PONG`，并刷新 room activity heartbeat。
 - 同一个 room 打开第二个客户端时，connected-client 数量会变化。
 
 队列命令测试：
@@ -352,6 +365,11 @@ Invoke-RestMethod `
   ConvertTo-Json -Depth 20
 ```
 
+自动 inactive cleanup 快速检查：
+
+- 打开 display 或 mobile 页时，WebSocket `PING` 会持续刷新 heartbeat，房间不应在页面仍打开时被自动清理。
+- 关闭所有 display/mobile/debug 页面后，等待至少 5 分钟；再次读取 snapshot 时，房间应已被标记为 inactive，队列和播放状态应被清理为 idle/empty。
+
 ## 中文 6. 搜索限流测试
 
 搜索限流默认按 room + client identity 做短窗口保护。快速手动测试时，不建议真的刷太多线上请求；只需要确认正常搜索能成功。
@@ -406,6 +424,8 @@ Invoke-RestMethod `
 - `下一首` 能切到下一首 queued 歌。
 - YouTube 视频自然结束也能推进队列。
 - 队列清空后房间回到 idle。
+- 大屏页显示 YouTube search quota 估算。
+- 关闭所有客户端 5 分钟后，房间会自动 inactive cleanup。
 
 ## 中文 10. 如果测试失败
 
@@ -497,12 +517,13 @@ https://ktv-assistant.bradwang1995.workers.dev/room/<roomId>/mobile
 
 - Results come from the backend `/api/rooms/:roomId/search` route.
 - The first 8 results are shown by default; scrolling to the bottom loads more from the current response cache, up to 40, without another search API call.
-- Users can choose `歌名 / 歌手` and toggle `带原唱`.
-- Top results prioritize the searched song title or artist itself; `带原唱` affects lyric/MV/lyrics ranking but should not outrank song/artist match.
+- Users can choose `歌名 / 歌手` and use the pill-shaped `带原唱` toggle; search settings and result count should remain sticky while scrolling.
+- Top results prioritize the searched song title or artist itself; KTV/karaoke results should remain the highest-priority version, then `带原唱` affects lyric/MV/lyrics ranking.
 - Only one candidate card mounts a YouTube preview iframe at a time; inactive candidates show thumbnails.
-- Selecting a candidate highlights it.
+- Selecting a candidate highlights it, and `已选中` / `已在歌单` should appear as bottom-right overlay tags without pushing card content down.
 - Tapping or playing a candidate preview iframe should select that candidate first.
-- Tapping the add-song button keeps you on the search tab and shows added-to-queue feedback.
+- Tapping outside the result grid should stop the active preview.
+- Tapping the add-song button keeps you on the search tab and shows a top toast plus an animation flying toward the queue count.
 
 9. Refresh the mobile page.
 10. Expected behavior:
@@ -536,8 +557,9 @@ This tests the production YouTube IFrame Player API path.
 - The YouTube player attempts to start automatically; if the browser allows audible autoplay, playback starts directly.
 - The app sends `PLAYER_STARTED` only after YouTube reports that playback has actually started.
 - If autoplay is blocked, the display shows a browser/autoplay warning; click the bottom `开始 K 歌` button instead of relying on the YouTube center play overlay.
-- `开始 K 歌` and `下一首` should sit below the iframe in the control bar and should not cover the YouTube progress bar.
+- YouTube native controls/fullscreen/settings should be hidden as much as possible; `开始 K 歌`, `下一首`, quality, and progress/seek controls should be app-owned controls in the bottom bar.
 - The quality selector defaults to `1080p`; after changing it, refresh or advance to the next song and confirm the same quality is retained.
+- The display footer should show a small YouTube search quota estimate, such as `今日搜索剩余 49/50 · PT 00:00 重置`.
 
 3. Use the display page `下一首` button for a fast auto-advance test.
 4. Expected behavior:
@@ -634,6 +656,17 @@ Invoke-RestMethod `
 
 Expected: response has `cached = true`, `results` has 0 to 8 items, and YouTube search quota is not used.
 
+Quota status smoke test:
+
+```powershell
+Invoke-RestMethod -Uri "$base/api/youtube/quota" | ConvertTo-Json -Depth 20
+```
+
+Expected:
+
+- Response includes `dailyLimit`, `used`, `remaining`, `exhausted`, `resetAt`, and `resetTimeZone`.
+- `resetTimeZone` should be `America/Los_Angeles`; YouTube daily quota resets at midnight Pacific Time.
+
 ## English 4. WebSocket Smoke Test
 
 Use the browser DevTools console on any production page.
@@ -667,7 +700,7 @@ ws.onclose = (event) => console.log("WS close", event.code, event.reason);
 Expected:
 
 - `JOIN_ROOM` returns `ROOM_SNAPSHOT`.
-- `PING` returns `PONG`.
+- `PING` returns `PONG` and refreshes room activity heartbeat.
 - Opening a second client for the same room changes the connected-client count.
 
 Queue command test:
@@ -772,6 +805,11 @@ Invoke-RestMethod `
   ConvertTo-Json -Depth 20
 ```
 
+Automatic inactive cleanup quick check:
+
+- While display or mobile is open, WebSocket `PING` should keep refreshing heartbeat, so the room should not be auto-cleaned.
+- After closing all display/mobile/debug pages, wait at least 5 minutes; reading the snapshot again should show the room marked inactive with an empty queue and idle playback.
+
 ## English 6. Search Rate Limit Test
 
 Search rate limiting protects the search route by room + client identity. For normal manual testing, do not spam production unnecessarily; just confirm regular search succeeds.
@@ -826,6 +864,8 @@ A production test pass means:
 - `下一首` advances to the next queued song.
 - Natural YouTube video ending also advances the room.
 - Empty queue returns the room to idle.
+- The display page shows a YouTube search quota estimate.
+- Closing all clients for 5 minutes automatically inactive-cleans the room.
 
 ## English 10. If Something Fails
 

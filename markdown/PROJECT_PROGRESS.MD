@@ -1,6 +1,6 @@
 # K歌助手项目进展 Tracker
 
-Last updated: 2026-07-02
+Last updated: 2026-07-03
 
 这个文件用来跟踪 `KTV_Assistant_Cloudflare_Design_Doc.md` 里的实现进度。我们后续每一轮都可以按这里的步骤推进：做一小块、验证一小块、更新一小块。
 
@@ -36,21 +36,28 @@ Last updated: 2026-07-02
 
 明确还不是最终形态的地方：
 
-- `[~]` 实时同步目前是本地浏览器同步，不是 Cloudflare Durable Object
+- `[x]` production 实时同步已走 Cloudflare Durable Object + WebSocket；本地 Vite 模式仍保留浏览器 fallback
 - `[x]` 搜索后端已接真实 YouTube Data API，前端仍保留 mock fallback
 - `[x]` 搜索结果 API 最多返回 40 条，手机端默认显示 8 条，并优先排序歌名/歌手本身匹配
 - `[x]` 点歌页进入时显示最多 8 条 KV 缓存推荐
 - `[x]` 搜索支持 `歌名 / 歌手` selector 和 `带原唱` toggle
+- `[x]` 手机搜索控件已压缩为 sticky 工具条，`带原唱` 为 pill-shaped toggle，搜索按钮为 icon-only
 - `[x]` 搜索状态按房间持久化，切到歌单再回来后保留 query、结果、可见数量和选中/预览状态
+- `[x]` 候选卡片的 `已选中` / `已在歌单` 使用右下角 overlay pill tags，不再挤压卡片内容
+- `[x]` 点歌成功使用页面级 toast 和飞向歌单计数的动画反馈，不再在卡片里显示临时加入提示
 - `[~]` 大屏播放器已接入 YouTube IFrame Player API 状态机；移动端预览仍使用普通 iframe
+- `[x]` 大屏播放器隐藏 YouTube 原生控件，使用 app 自有开始/下一首/清晰度/进度控制
 - `[x]` Cloudflare backend 已有 API router、D1 repository、Worker 入口和 Room Durable Object Worker 配置
 - `[x]` 已实现 D1 repository 写法，并通过真实 Cloudflare D1 remote API 验证
 - `[x]` KV namespace `SEARCH_CACHE` 已创建并完成 Worker 绑定验证
 - `[x]` 已通过真实 Cloudflare runtime 验证 WebSocket 房间连接和队列命令路径
 - `[x]` YouTube 搜索默认每次冷缓存填充只使用 1 个 `search.list` call，最多缓存 50 条候选，适配 50/day quota
+- `[x]` YouTube search quota 后台估算按 Pacific Time 午夜重置，并通过大屏页展示剩余次数
 - `[x]` 手机端点击或播放搜索候选预览时会先选中该视频
 - `[x]` 手机端同一时间只挂载一个 active preview iframe
+- `[x]` 手机端点击搜索结果外部时会卸载当前 preview iframe，避免继续消耗流量
 - `[x]` 大屏二维码已下移，避免遮挡 YouTube 顶部播放控件
+- `[x]` Room Durable Object 使用 heartbeat/activity + alarm，5 分钟无活跃后自动清理 inactive room
 
 ## Phase 0 - Project Setup
 
@@ -198,6 +205,8 @@ Last updated: 2026-07-02
 - `[x]` 前端优先调用 API search，失败时 fallback 到 mock search
 - `[x]` 搜索失败友好提示
 - `[x]` quota 保护策略：默认 50 calls/day，每次 cache fill 默认 1 call / 50 results
+- `[x]` KTV/karaoke 搜索结果无论是否带原唱都保持最高优先级，其次再考虑伴奏、lyrics/MV 和原唱意图
+- `[x]` `GET /api/youtube/quota` 返回后台估算的今日搜索额度，按 Pacific Time 午夜重置
 - `[x]` 使用真实 `YOUTUBE_API_KEY` 验证 YouTube result quality
 
 建议实现方式：
@@ -221,6 +230,8 @@ Last updated: 2026-07-02
 - `[x]` 可以选择候选视频
 - `[x]` 点击或播放候选视频预览时会先选中该候选
 - `[x]` 同一时间只有一个 preview iframe 可播放
+- `[x]` 点击搜索结果外部会停止当前 preview
+- `[x]` preview iframe 尽量隐藏 YouTube 原生 controls 和 fullscreen
 - `[x]` 选中态边框
 - `[x]` 点歌按钮
 - `[~]` 响应式布局已做基础版
@@ -252,6 +263,7 @@ Last updated: 2026-07-02
 - `[x]` 当前歌出现后默认主动请求播放，不再要求先点击底部按钮才能启用下一首自动续播
 - `[x]` 切到下一首时等待 YouTube player API 方法可用后再请求播放，避免 `playVideo` 尚未挂载导致 display 白屏
 - `[x]` 默认建议 1080p 清晰度，并记住本机选择的清晰度用于下一首视频
+- `[x]` 隐藏 YouTube 原生 controls/fullscreen，改用 app 自有清晰度和进度/seek 控制
 - `[x]` 播放失败兜底 UI
 - `[ ]` 浏览器 autoplay 限制下的真实设备测试
 
@@ -274,6 +286,10 @@ Last updated: 2026-07-02
 - `[x]` YouTube API 使用说明或 footer
 - `[x]` search cache fill defaults to one YouTube search call and 50 cached results
 - `[x]` display QR code offset avoids the YouTube top-right playback/settings area
+- `[x]` Create page 只提供创建房间入口，扫码点歌入口保留在已创建房间的大屏页
+- `[x]` Mobile search controls are sticky while scrolling, with result count visible near the controls
+- `[x]` Room Durable Object refreshes activity on JOIN/PING/snapshot/commands and expires rooms after 5 minutes without activity
+- `[x]` Display page shows a small YouTube search quota estimate
 - `[~]` 移动端 Safari 测试：测试清单已补，待实机验收
 - `[~]` Android Chrome 测试：测试清单已补，待实机验收
 - `[~]` iPad Safari 测试：测试清单已补，待实机验收
@@ -301,6 +317,8 @@ Last updated: 2026-07-02
 - `[x]` WebSocket runtime integration tests
 - `[x]` Search rate-limit unit tests
 - `[x]` Search family/ranking unit tests cover song/artist and original-vocal modes
+- `[x]` YouTube quota unit tests cover Pacific Time reset behavior
+- `[x]` Post-internal-test group verification: typecheck plus targeted search/quota/WebSocket tests
 - `[ ]` Playwright E2E test
 - `[x]` Local browser smoke: display autoplay params, saved quality preference, and `下一首` continuation verified through Vite dev server
 - `[~]` Manual QR scan / device matrix documented in `testing.md`
@@ -379,7 +397,7 @@ Goal: display page detects playback events and advances automatically.
 Goal: make the MVP comfortable enough for a real small gathering.
 
 - `[~]` Phone portrait QA documented, awaiting real-device pass
-- `[x]` Phone portrait home page now exposes both `创建房间` and `扫码点歌` CTAs
+- `[x]` Phone portrait home page now keeps only the valid `创建房间` CTA before a room exists
 - `[~]` Landscape display QA documented, awaiting real-device pass
 - `[x]` Better loading/error UI
 - `[x]` Room link copy polish
@@ -413,9 +431,10 @@ npx wrangler versions view 0df7e1b2-7a47-4ab5-a14f-b38d90b09e9e --config wrangle
 curl -X POST https://ktv-assistant.bradwang1995.workers.dev/api/rooms
 curl https://ktv-assistant.bradwang1995.workers.dev/api/rooms/<roomId>/snapshot
 curl -X POST https://ktv-assistant.bradwang1995.workers.dev/api/rooms/<roomId>/cleanup
+curl https://ktv-assistant.bradwang1995.workers.dev/api/youtube/quota
 ```
 
-Remote Step 7/8, Step 8.5, Step 8.6, Step 9.5, production testing docs, search quota polish, candidate selection polish, QR overlay polish, display autoplay follow-up, playback-quality persistence, and the first internal-test fix pass were updated through 2026-07-02. Latest main Worker + Assets deploy version: `628c4f22-35e0-481b-8ef4-4be952fc644f`; latest Room Worker deploy version: `e893a72f-b718-43a7-adc8-60bd63c6444c`; latest production smoke room: `1j000c55`.
+Remote Step 7/8, Step 8.5, Step 8.6, Step 9.5, production testing docs, search quota polish, candidate selection polish, QR overlay polish, display autoplay follow-up, playback-quality persistence, the first internal-test fix pass, and post-internal-test fix pass 1 were updated through 2026-07-03. Latest main Worker + Assets deploy version before this pass: `628c4f22-35e0-481b-8ef4-4be952fc644f`; latest Room Worker deploy version before this pass: `e893a72f-b718-43a7-adc8-60bd63c6444c`; latest production smoke room before this pass: `1j000c55`.
 
 ## Notes
 

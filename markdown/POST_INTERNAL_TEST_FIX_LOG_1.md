@@ -58,7 +58,16 @@
 - 2026-07-03 group 4 room heartbeat and inactivity cleanup:
   - `npm run typecheck` passed.
   - `npm run test -- worker/roomCommands.test.ts worker/websocketMessages.test.ts` passed.
+- 2026-07-03 full local verification:
+  - `npm run typecheck` passed.
+  - `npm run test` passed: 12 test files, 44 tests.
+  - `npm run build` passed.
 
 ## Commit Log
 
-- Pending.
+- `b491c5c` - `Polish mobile search feedback`
+- `aaf92a0` - `Improve search ranking and quota status`
+- `9e05d8b` - `Hide player chrome and add app progress`
+- `a9e842a` - `Expire inactive rooms with alarms`
+- This documentation commit - update README/progress/testing/search docs and record full local verification.
+- Pending: push and redeploy record.

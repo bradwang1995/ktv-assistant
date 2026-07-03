@@ -1,6 +1,6 @@
 # Search Details
 
-Last updated: 2026-07-02
+Last updated: 2026-07-03
 
 This document captures the next search-system change request before implementation. The goal is to spend scarce YouTube search quota on broader, reusable result sets, then serve most user searches from cache.
 
@@ -20,6 +20,8 @@ This document captures the next search-system change request before implementati
 - Search request options now include `searchType: "song" | "artist"` and `includeOriginalVocal: boolean`.
 - Mobile search requests up to 40 cached results, shows the first 8, then expands in batches of 8 from the current response without calling the search API again.
 - Mobile search state persists per room for 24 hours: query, search type, original-vocal toggle, result cache, visible count, selected video, active preview, and scroll position.
+- KTV/karaoke signals are primary ranking signals regardless of original-vocal intent; accompaniment and lyric/MV/original-vocal signals are secondary.
+- `GET /api/youtube/quota` returns the backend estimate for today's YouTube search usage and resets by Pacific Time day.
 
 ## Product Goal
 
@@ -39,7 +41,7 @@ Google's current YouTube Data API docs say `search.list` `maxResults` accepts `0
 
 The docs also say `q` supports Boolean OR with `|` and exclusion with `-`, which may help combine related terms into fewer requests. The pipe character must be URL-escaped when sent over HTTP.
 
-Quota should be treated as configurable. The current project budget is treated as 50 `search.list` calls/day. With one request per cold search, the app can support up to about 50 uncached user searches/day before relying entirely on cache.
+Quota should be treated as configurable. The current project budget is treated as 50 `search.list` calls/day. With one request per cold search, the app can support up to about 50 uncached user searches/day before relying entirely on cache. Google reports YouTube daily quota reset at midnight Pacific Time, so the app's backend estimate uses the `America/Los_Angeles` calendar day instead of UTC.
 
 References:
 
@@ -214,8 +216,9 @@ Retain and extend current scoring:
 
 - Strongly prefer results whose title exactly matches, starts with, or contains the searched song title.
 - Treat channel-only query matches, same-artist songs, and related songs as lower-priority results.
-- Prefer title/channel signals: `KTV`, `karaoke`, `卡拉OK`, `伴奏`, `instrumental`, `pinyin`.
-- When `includeOriginalVocal` is true, prefer `lyric video`, `lyrics`, `歌词`, `MV`, `official`, and subtitle signals while keeping song/artist match as the highest priority.
+- Always prefer KTV/karaoke title/channel signals first: `KTV`, `karaoke`, `卡拉OK`.
+- Then prefer accompaniment and lyrics signals: `伴奏`, `instrumental`, `字幕`, `pinyin`, `lyric video`, `lyrics`, `歌词`.
+- When `includeOriginalVocal` is true, add preference for `原唱`, `MV`, and `official` while keeping KTV/karaoke and song/artist match above generic lyric/original-vocal results.
 - When `searchType` is `artist`, prefer title/channel metadata that contains the artist query and allow multiple songs from that artist.
 - Prefer embeddable videos.
 - Prefer medium-length music videos and karaoke tracks.
@@ -246,3 +249,10 @@ The first internal-test follow-up added mobile search controls and state persist
 - `includeOriginalVocal` defaults to `false`; enabling it changes source-query expansion and ranking toward lyric/original-vocal candidates.
 - Search cache version is now `yt-search:v3` so karaoke/original-vocal and song/artist modes do not accidentally share stale v2 entries.
 - The API can return up to 40 cached candidates; infinite-scroll/load-more uses only the current response cache and does not spend new YouTube quota.
+
+## 2026-07-03 Post-Internal-Test Search Update
+
+- KTV/karaoke results now receive primary scoring in both accompaniment and original-vocal modes.
+- Lyrics/MV/original-vocal signals still matter, but they should not push generic lyric videos above strong KTV/karaoke matches.
+- YouTube search quota tracking now uses the Pacific Time quota day and exposes a status endpoint for display-page visibility.
+- Display page quota UI is informational only; cache hits and blank-query recommendations should not spend YouTube search quota.
