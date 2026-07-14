@@ -1,30 +1,38 @@
 # K歌助手
 
-一个面向朋友聚会场景的 Web KTV 点歌助手：大屏负责播放，手机负责点歌，同一个房间通过 Cloudflare Worker + Durable Object + WebSocket 同步歌单。
+一个适合朋友聚会的 Web KTV 点歌助手：大屏播放、手机扫码点歌，同一房间通过 Cloudflare Durable Object 和 WebSocket 实时同步。
 
-## Production
+Production: <https://ktv-assistant.bradwang1995.workers.dev>
 
-- 主应用域名：`https://ktv-assistant.bradwang1995.workers.dev`
-- 主应用 Worker：`ktv-assistant`
-- Room Durable Object Worker：`ktv-assistant-room`
-- Durable Object class：`RoomDurableObject`
-- D1 database：`ktv-assistant-db` (`a2fe987b-5191-4ac3-9d01-f923d19c731a`)
-- KV namespace：`SEARCH_CACHE` (`aedd751919314f9e81f1917e59a859bd`)
-- YouTube Data API secret：`YOUTUBE_API_KEY` 已配置在 Cloudflare
+## 使用方式
 
-## 当前功能
+- `/create`：创建房间并进入大屏。
+- `/room/:roomId/display`：播放当前歌曲、切歌、调整进度和清晰度，并显示手机点歌二维码。
+- `/room/:roomId/mobile`：搜索、预览、点歌和管理歌单。
+- `/room/:roomId/debug`：查看远端 snapshot、房间链接和 cleanup 操作。
 
-- `/create` 创建房间并进入大屏页；手机点歌入口在房间大屏页的二维码和手机链接里。
-- `/room/:roomId/display` 大屏播放页，显示 QR code、当前歌曲、连接状态、下一首、真实清晰度选项、居中进度/seek 控制和 YouTube search quota 估算；`扫码点歌` 标题和二维码会打开手机页新 tab。
-- `/room/:roomId/mobile` 手机点歌页，支持按歌名/歌手搜索、pill-shaped 带原唱 toggle、sticky 搜索工具条、缓存推荐、单个 480p active preview、点击外部停止预览、连续点歌不跳转、点歌飞行动画、页面级 toast、搜索状态恢复、缓存加载更多、直接置顶、删歌、切歌/重唱确认、重复点歌提示和刷新保留 tab。
-- `/room/:roomId/debug` 调试页，支持查看 snapshot、复制房间链接、刷新远端状态和清理已完成歌曲。
-- 后端搜索接入 YouTube Data API，KV 缓存搜索结果和默认推荐；冷搜索默认最多消耗 1 次 `search.list` call、缓存 50 条候选，API 最多返回 40 条，KTV/karaoke 版本优先，手机端先显示 8 条再从当前缓存展开，并有基础搜索限流。
-- YouTube search quota 使用 KV 做后台估算，按 Pacific Time 午夜重置，并提供 `GET /api/youtube/quota` 给大屏页按浏览器本地时区展示重置时间。
-- 大屏接入 YouTube IFrame Player API，当前歌出现后会主动尝试播放，切到下一首或手机端切歌时继续自动尝试播放；播放开始/结束会同步 `PLAYER_STARTED` / `PLAYER_ENDED`，手机端重唱会同步重头播放，YouTube 原生控件尽量隐藏，进度和清晰度由 app 控制。
-- Room Durable Object 会把 WebSocket `PING`、JOIN、snapshot 和队列命令视为活跃心跳；5 分钟没有活跃请求时自动将房间置为 inactive 并清理队列/播放状态。
-- 大屏播放器默认建议 1080p 清晰度，并会记住本机上次选择的播放清晰度用于下一首视频；清晰度菜单来自当前视频实际可用档位，不再显示 `最高` 占位。
-- WebSocket 支持重连 backoff；production 断线时不会静默写入本地假状态。
-- 本地 Vite 模式保留 localStorage fallback，方便 UI 开发。
+手机端支持歌名/歌手搜索、`带原唱`、缓存推荐、单预览、搜索状态恢复、连续点歌、置顶/删除，以及远程重唱和切歌。大屏使用 YouTube IFrame Player API 自动续播，并记住本机的清晰度偏好。
+
+## 架构
+
+- React + TypeScript + Vite：前端与静态资源。
+- Cloudflare Worker：API 和 production assets。
+- Durable Object：房间状态、WebSocket 广播、心跳和 5 分钟 inactive cleanup。
+- D1：房间与歌单持久化。
+- KV：搜索缓存、推荐池、限流和 YouTube quota 估算。
+- YouTube Data API / IFrame Player API：搜索和官方嵌入播放。
+
+Production 资源：
+
+| 资源 | 名称 / ID |
+| --- | --- |
+| Main Worker | `ktv-assistant` |
+| Room Worker | `ktv-assistant-room` |
+| Durable Object class | `RoomDurableObject` |
+| D1 | `ktv-assistant-db` / `a2fe987b-5191-4ac3-9d01-f923d19c731a` |
+| KV | `SEARCH_CACHE` / `aedd751919314f9e81f1917e59a859bd` |
+
+`YOUTUBE_API_KEY` 已作为 encrypted secret 配置在两个 Worker 中，不应写入代码、文档或 Wrangler config。
 
 ## 本地开发
 
@@ -33,7 +41,7 @@ npm install
 npm run dev
 ```
 
-本地 Vite server 主要用于 UI 开发。真实 D1、KV、Durable Object、WebSocket 和 production asset 行为，请使用 production URL 测试。
+本地 Vite 模式适合 UI 开发，并会保留 browser-local fallback。D1、KV、Durable Object、WebSocket 和 production assets 的真实行为必须在线上环境验证。
 
 ## 验证
 
@@ -43,22 +51,46 @@ npm run test
 npm run build
 ```
 
-Production 测试流程见：
+最短 production 验收流程：
 
-```txt
-markdown/TESTING.MD
+1. 从 `/create` 创建一个新房间，在大屏页打开二维码对应的手机页。
+2. 手机搜索并加入两首歌；确认大屏无需刷新即可同步，第一首播放、第二首排队。
+3. 确认搜索模式、`带原唱`、预览、继续加载、点歌反馈和刷新后的 tab/search 状态。
+4. 确认大屏自动播放尝试、进度 seek、清晰度记忆、手动下一首和自然播完自动续播。
+5. 确认手机端置顶/删除，以及需要确认的重唱/切歌。
+6. 打开 debug 页检查 snapshot；确认 quota 状态，并在所有客户端关闭 5 分钟后检查 inactive cleanup。
+7. 发布前至少覆盖 Mobile Safari、Android Chrome、iPad Safari 和 Desktop Chrome。
+
+API smoke test（PowerShell）：
+
+```powershell
+$base = "https://ktv-assistant.bradwang1995.workers.dev"
+$room = Invoke-RestMethod -Method Post -Uri "$base/api/rooms"
+Invoke-RestMethod -Uri "$base/api/rooms/$($room.roomId)/snapshot"
+Invoke-RestMethod -Uri "$base/api/youtube/quota"
 ```
 
-## 部署
+通过标准：新房间初始 queue 为空且 player 为 `idle`；手机点歌后多端实时同步；切歌或视频结束能推进队列；空队列回到 `idle`。
 
-只改主应用 Worker + Assets 时：
+## 搜索规则
+
+- Endpoint：`POST /api/rooms/:roomId/search`。
+- 支持 `searchType: "song" | "artist"` 和 `includeOriginalVocal`。
+- 前端最多取得 40 条缓存候选，先显示 8 条，再从当前结果继续展开，不重复请求 API。
+- 冷缓存默认只使用一次 YouTube `search.list`，最多缓存 50 条；空查询推荐不消耗 search quota。
+- 排序先保证歌名/歌手相关性，再优先 KTV/karaoke，最后结合伴奏、歌词、MV 和原唱意图。
+- Quota 估算默认 50 calls/day，按 Pacific Time 午夜重置；状态由 `GET /api/youtube/quota` 提供。
+
+## 部署与维护
+
+只改主应用 Worker 或前端：
 
 ```bash
 npm run build
 npx wrangler deploy --keep-vars
 ```
 
-如果改到了 Room Durable Object Worker：
+如果改到 Room Durable Object，再先部署 Room Worker：
 
 ```bash
 npm run build
@@ -66,10 +98,19 @@ npx wrangler deploy --config wrangler.room.toml --keep-vars
 npx wrangler deploy --keep-vars
 ```
 
-使用 `--keep-vars` 是为了避免覆盖 Cloudflare Dashboard 中已有的变量配置。不要把 `YOUTUBE_API_KEY` 或 Cloudflare token 写进源码、README、`.env`、`.dev.vars` 或 Wrangler config。
+首次配置或恢复资源时常用命令：
 
-## 重要约束
+```bash
+npx wrangler login
+npx wrangler d1 execute ktv-assistant-db --file ./migrations/0001_initial.sql --remote
+npx wrangler secret put YOUTUBE_API_KEY
+npx wrangler secret put YOUTUBE_API_KEY --config wrangler.room.toml
+```
 
-- YouTube 内容只通过官方 embed / IFrame Player API 播放。
-- 不下载、不转码、不提取、不重新托管 YouTube 视频。
-- production 行为以 `workers.dev` 线上环境为准，不以本地 Vite fallback 为准。
+使用 `--keep-vars` 避免覆盖 Dashboard 中已有变量。数据库结构应通过 migration 修改，不要直接手改 production D1。
+
+如果 production 测试失败，先确认使用的是线上域名和新房间，再检查浏览器 Console/Network、Worker bindings、`YOUTUBE_API_KEY`、quota 和 KV cache。
+
+## 内容约束
+
+YouTube 内容只通过官方 embed / IFrame Player API 播放；不下载、不提取、不转码、不重新托管。
