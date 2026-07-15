@@ -1,6 +1,8 @@
-# K歌助手
+# Karaoke Assistant（K歌助手）
 
 一个面向朋友聚会的 Web KTV 点歌助手：大屏负责播放，手机负责扫码点歌，同一房间通过 Cloudflare Worker、Durable Object 和 WebSocket 实时同步。
+
+Repository: <https://github.com/bradwang1995/Karaoke-Assistant>
 
 Production: <https://ktv-assistant.bradwang1995.workers.dev>
 
@@ -112,6 +114,7 @@ worker/youtube*.ts          live search、quota
 
 | 资源 | 名称 / ID |
 | --- | --- |
+| GitHub repository | `bradwang1995/Karaoke-Assistant` |
 | Cloudflare account | `Bradwang1995@gmail.com's Account` / `7b1b04c010c424952c9d2cbcbea76145` |
 | Main Worker + Assets | `ktv-assistant` |
 | Production origin | `ktv-assistant.bradwang1995.workers.dev` |
@@ -130,6 +133,8 @@ ROOM_OBJECT  -> RoomDurableObject in ktv-assistant-room
 ```
 
 Room Worker 使用相同 D1/KV，并通过 `[[migrations]]` 创建 `RoomDurableObject`。`workers_dev = false`，不需要独立 public URL。
+
+GitHub repository 与 Cloudflare Worker 独立命名。仓库已改名为 `Karaoke-Assistant`，但 Main Worker 继续使用 `ktv-assistant`，因此现有 production URL、D1、KV、Durable Object 和 secrets 不需要迁移。项目通过 Wrangler 手动部署，没有 Cloudflare Git integration；更新 Git remote 或 `git push` 不会触发 deploy。
 
 Runtime variables：
 

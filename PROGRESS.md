@@ -8,6 +8,7 @@ Last updated: 2026-07-15
 
 | Area | Status | Summary |
 | --- | --- | --- |
+| Repository | Complete | GitHub 已改名为 `bradwang1995/Karaoke-Assistant`，local origin 已更新。 |
 | Product MVP | Complete | Create、display、mobile、debug 全流程可用。 |
 | Cloudflare backend | Complete | Worker + Assets、D1、KV、Durable Object 已上线。 |
 | Realtime queue | Complete | WebSocket commands、broadcast、persistence、reconnect 已完成。 |
@@ -17,7 +18,7 @@ Last updated: 2026-07-15
 | Reliability | MVP complete | Heartbeat、5-minute cleanup、debug、fallback policy 已完成。 |
 | Automated tests | 14 files / 53 tests | Route/DO integration 和 Playwright E2E 待补。 |
 | Real-device QA | Pending | Safari、Android、iPad、Desktop Chrome 待正式验收。 |
-| Documentation | Complete | 只保留 root README + progress。 |
+| Documentation | Complete | 只保留 root `README.md` + `PROGRESS.md`。 |
 
 状态：`[x]` complete；`[~]` usable but needs further validation；`[ ]` pending。
 
@@ -255,6 +256,7 @@ Last updated: 2026-07-15
 | 2026-07-14 follow-up UI | 1280×720：Display 默认 `controls=0/fs=0`，手动为 `controls=1/fs=1`，error iframe 隐藏且画质 selector 不挤压 footer；390×844：sticky 停在 164px、结果间距收紧，卡片标签滚入搜索区时由 sticky 层正确遮挡。 |
 | 2026-07-14 pass 4 | Typecheck、14 files / 53 tests、production build、Wrangler 4.105 Main Worker dry-run、`git diff --check` passed。 |
 | 2026-07-14 pass 4 UI | 390×844：create CTA 首屏可见、无横向 overflow、preview URL `start=30` 且单 iframe；1280×720：dark 140px QR、无画质 selector、三键 panel、下一首切换后 progress value `0`。 |
+| 2026-07-15 repository rename | New/old GitHub remotes resolve to HEAD `d64f60f`；local origin 更新至 `bradwang1995/Karaoke-Assistant`；production root 返回 HTTP 200；no deploy。 |
 
 ### Fourth-round design QA（2026-07-15）
 
