@@ -345,7 +345,7 @@ Family entry 保存：
 - Recommendation key 不存在或不足时，会从最近 family entries 合并 fallback，因此旧的 40 条 pool 也能继续扩展。
 - Project guardrail：50 search calls/day、1 call/cold fill。
 - Quota day 按 `America/Los_Angeles`，PT 午夜重置。
-- `GET /api/youtube/quota` 返回 remaining/reset；display 显式显示浏览器本地日期、时间、时区缩写和 IANA 时区。
+- `GET /api/youtube/quota` 返回 remaining/reset；display 只显示简洁的本地相对倒计时（`本地重置还有 N 小时`），不暴露 GMT 或 IANA 时区文本。
 - Estimate 不替代 Google Cloud Console，失败/无效请求可能造成 drift。
 - 非空搜索默认同 room + IP identity 每分钟 20 次。
 - 超限：HTTP 429、`SEARCH_RATE_LIMITED`、`retry-after`。
@@ -494,8 +494,9 @@ Display 专项：
 - `PLAYER_STARTED` 只在实际播放后出现。
 - Autoplay blocked 时提示清楚。
 - 不显示无效清晰度 selector；YouTube 自适应画质不伪装成可强制选择。
-- QR 使用纯黑/纯白高纠错码，不遮挡 player。
-- `实时已连接`、今日剩余额度和本地 reset 时间都在 footer 最左侧；歌名与 progress 在中间且不重叠。
+- QR 使用 Canvas 输出纯黑/纯白高纠错码，并阻止浏览器强制深色模式降低对比度；不遮挡 player。
+- `实时已连接`、今日剩余额度和本地 reset 相对小时都在 footer 最左侧，不显示“正在播放”；歌名与 progress 在中间且不重叠。
+- Mobile 顶部 header 与 search sticky 共用同一高度变量；滚动前后 padding 不变，结果卡片的“已选中/已在歌单”标签不得穿透搜索栏。
 
 ### 10.2 API/search smoke
 

@@ -85,8 +85,8 @@ export default function MobilePage() {
 
   return (
     <main className="min-h-screen bg-slate-100 text-slate-950">
-      <div className="mx-auto flex min-h-screen w-full max-w-3xl flex-col bg-white shadow-sm">
-        <header className="sticky top-0 z-20 min-h-[9.75rem] border-b border-slate-200 bg-white px-4 py-3">
+      <div className="mx-auto flex min-h-screen w-full max-w-3xl flex-col bg-white shadow-sm [--mobile-header-height:10.25rem]">
+        <header className="sticky top-0 z-40 h-[var(--mobile-header-height)] shrink-0 overflow-hidden border-b border-slate-200 bg-white px-4 py-3">
           <div className="flex items-center justify-between gap-3">
             <div>
               <h1 className="text-lg font-semibold tracking-normal">K歌助手</h1>
@@ -632,7 +632,7 @@ function SearchTab({
       <MobileToast toast={toast} />
       <AddToQueueTrail trail={addTrail} />
 
-      <div className="sticky top-[9.75rem] z-10 -mx-4 border-b border-slate-200 bg-white px-4 py-3 shadow-sm">
+      <div className="sticky top-[var(--mobile-header-height)] z-30 isolate -mx-4 border-b border-slate-200 bg-white px-4 py-3 shadow-sm">
         <form onSubmit={submitSearch}>
           <div className="grid grid-cols-[4.65rem_minmax(0,1fr)_4.25rem_2.5rem] gap-1.5 sm:grid-cols-[5.25rem_minmax(0,1fr)_4.75rem_2.75rem] sm:gap-2">
             <label className="sr-only" htmlFor="search-type">
@@ -699,9 +699,9 @@ function SearchTab({
             </button>
           </div>
         </form>
-        <div className="mt-2 flex items-center justify-between gap-3">
-          <h2 className="text-sm font-semibold text-slate-700">{resultHeading}</h2>
-          <span className="rounded-md bg-slate-100 px-2 py-1 text-xs text-slate-600">
+        <div className="mt-2 flex h-5 items-center justify-between gap-3">
+          <h2 className="text-sm font-semibold leading-5 text-slate-700">{resultHeading}</h2>
+          <span className="shrink-0 rounded-md bg-slate-100 px-1.5 text-xs leading-5 text-slate-600">
             {resultCountLabel}
           </span>
         </div>
@@ -930,7 +930,7 @@ function CandidateVideoCard({
       aria-label={`选择 ${result.title}`}
       onPointerDownCapture={onSelect}
       onKeyDown={handleKeyDown}
-      className={`relative aspect-video cursor-pointer overflow-hidden rounded-lg border bg-white text-left transition focus:outline-none focus:ring-4 ${
+      className={`relative isolate z-0 aspect-video cursor-pointer overflow-hidden rounded-lg border bg-white text-left transition focus:outline-none focus:ring-4 ${
         selected
           ? "border-teal-500 ring-4 ring-teal-100"
           : "border-slate-200 hover:border-slate-300 focus:border-teal-500 focus:ring-teal-100"

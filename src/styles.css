@@ -3,7 +3,7 @@
 @tailwind utilities;
 
 :root {
-  color-scheme: light;
+  color-scheme: only light;
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
@@ -28,6 +28,33 @@ input {
 
 iframe {
   border: 0;
+}
+
+.qr-code-card,
+.qr-code-surface {
+  color-scheme: only light;
+  forced-color-adjust: none;
+}
+
+.qr-code-card {
+  background-color: #ffffff !important;
+  color: #000000 !important;
+}
+
+.qr-code-card a {
+  color: #000000 !important;
+}
+
+.qr-code-surface,
+.qr-code-canvas {
+  background-color: #ffffff !important;
+}
+
+.qr-code-canvas {
+  display: block;
+  filter: none !important;
+  mix-blend-mode: normal;
+  opacity: 1 !important;
 }
 
 .scrollbar-soft {

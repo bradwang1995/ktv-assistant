@@ -1,6 +1,6 @@
 import { MonitorPlay, SkipForward, Wifi, WifiOff } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
-import { QRCodeSVG } from "qrcode.react";
+import { QRCodeCanvas } from "qrcode.react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import {
@@ -10,6 +10,7 @@ import {
 } from "../components/FullscreenPlayer";
 import { useRoomSocket, type SocketStatus } from "../hooks/useRoomSocket";
 import { fetchYouTubeQuotaStatus } from "../lib/apiClient";
+import { formatRelativeQuotaReset } from "../lib/quotaReset";
 import { getCurrentItem, getQueuedItems } from "../lib/roomReducer";
 import { playerEnded, playerStarted, useRoomSnapshot } from "../lib/roomState";
 import type { QueueItem } from "../types/room";
@@ -180,7 +181,7 @@ export default function DisplayPage() {
       <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_18%_20%,rgba(20,184,166,0.22),transparent_30%),radial-gradient(circle_at_78%_78%,rgba(251,113,133,0.18),transparent_28%)]" />
 
       <div className="relative z-10 flex min-h-screen flex-col">
-        <div className="absolute right-5 top-20 z-30 hidden rounded-xl border-4 border-white bg-white p-4 text-slate-950 shadow-[0_0_36px_rgba(255,255,255,0.5)] sm:block">
+        <div className="qr-code-card absolute right-5 top-20 z-30 hidden rounded-xl border-4 border-white bg-white p-4 text-slate-950 shadow-[0_0_36px_rgba(255,255,255,0.5)] sm:block">
           <div className="mb-3 flex items-center justify-center">
             <Link
               to={`/room/${roomId}/mobile`}
@@ -196,14 +197,15 @@ export default function DisplayPage() {
             target="_blank"
             rel="noreferrer"
             aria-label="打开扫码点歌手机页"
-            className="block rounded-md bg-white p-2 focus:outline-none focus:ring-4 focus:ring-teal-200"
+            className="qr-code-surface block rounded-md bg-white p-2 focus:outline-none focus:ring-4 focus:ring-teal-200"
           >
-            <QRCodeSVG
+            <QRCodeCanvas
               value={mobileUrl}
               size={168}
               level="H"
               bgColor="#ffffff"
               fgColor="#000000"
+              className="qr-code-canvas"
             />
           </Link>
         </div>
@@ -242,7 +244,6 @@ export default function DisplayPage() {
         <section className="relative z-20 border-t border-white/10 bg-slate-950 px-4 py-4 shadow-2xl">
           <div className="grid gap-4 text-sm lg:grid-cols-[13rem_minmax(0,1fr)_13rem] lg:items-center">
             <div className="min-w-0 lg:self-start">
-              <p className="mb-2 text-xs font-semibold text-teal-200">正在播放</p>
               <ConnectionBadge
                 status={roomSocket.status}
                 canUseLocalFallback={roomSocket.canUseLocalFallback}
@@ -377,28 +378,9 @@ function YouTubeQuotaStatus({
       }`}
     >
       <p>今日搜索剩余 {status.remaining}/{status.dailyLimit}</p>
-      <p>{formatLocalQuotaReset(status.resetAt)}</p>
+      <p>{formatRelativeQuotaReset(status.resetAt)}</p>
     </div>
   );
-}
-
-function formatLocalQuotaReset(resetAt: string) {
-  const resetDate = new Date(resetAt);
-
-  if (Number.isNaN(resetDate.getTime())) {
-    return "按浏览器本地时间重置";
-  }
-
-  const localTimeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
-  const formatted = new Intl.DateTimeFormat(undefined, {
-    month: "short",
-    day: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-    timeZoneName: "short",
-  }).format(resetDate);
-
-  return `本地重置 ${formatted}${localTimeZone ? ` · ${localTimeZone}` : ""}`;
 }
 
 function playbackLoadingKey(queueItemId: string, updatedAt: string) {

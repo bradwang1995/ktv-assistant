@@ -216,6 +216,14 @@ Last updated: 2026-07-13
 | PIT3-12 | P1 | 非空搜索最多 50，首批和后续每批 10。 |
 | PIT3-13 | P1 | README/progress、自动测试、responsive browser smoke 和 release。 |
 
+### 2026-07-14 post-internal pass 3 follow-up
+
+| ID | P | Completed |
+| --- | --- | --- |
+| PIT3-14 | P0 | QR 从 DOM SVG 改为 Canvas 黑白输出，并加 `only light` / forced-color protection，避免客户端强制深色导致不可扫描。 |
+| PIT3-15 | P1 | Display 移除“正在播放”；quota reset 简化为只显示剩余小时，不再显示 GMT、日期或 IANA 时区。 |
+| PIT3-16 | P1 | Mobile header/search sticky 共用 10.25rem 高度变量并分离层级；收紧结果计数 padding，阻止卡片标签滚动穿透搜索栏。 |
+
 ## 4. Verification record
 
 ### Automated history
@@ -228,6 +236,8 @@ Last updated: 2026-07-13
 | 2026-07-13 docs | Typecheck、12 files / 47 tests、production build passed；no deploy。 |
 | 2026-07-13 pass 3 | Typecheck、11 files / 44 tests、production build、`git diff --check` passed。 |
 | 2026-07-13 pass 3 UI | 390×844：2 columns、16px input、single debounced iframe、original auto-search；1280×720：QR/footer/title-progress layout passed。 |
+| 2026-07-14 pass 3 follow-up | Typecheck、12 files / 47 tests、production build、`git diff --check` passed。 |
+| 2026-07-14 follow-up UI | 1280×720：168px Canvas QR 为纯白底/纯黑码且无“正在播放”；390×844：header/search sticky 均停在 164px、上下 padding 保持 12px，卡片标签滚入搜索区时由 sticky 层正确遮挡。 |
 
 Current coverage：
 
