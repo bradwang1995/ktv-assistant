@@ -8,6 +8,7 @@ interface StatusMessageProps {
   title?: string;
   children: ReactNode;
   className?: string;
+  appearance?: "light" | "dark";
 }
 
 const toneClasses: Record<StatusTone, string> = {
@@ -26,21 +27,40 @@ const iconClasses: Record<StatusTone, string> = {
   loading: "text-slate-500",
 };
 
+const darkToneClasses: Record<StatusTone, string> = {
+  info: "border-sky-300/20 bg-sky-300/10 text-sky-100",
+  success: "border-emerald-300/20 bg-emerald-300/10 text-emerald-100",
+  warning: "border-amber-300/20 bg-amber-300/10 text-amber-100",
+  error: "border-rose-300/20 bg-rose-300/10 text-rose-100",
+  loading: "border-white/10 bg-white/[0.06] text-slate-200",
+};
+
+const darkIconClasses: Record<StatusTone, string> = {
+  info: "text-sky-300",
+  success: "text-emerald-300",
+  warning: "text-amber-300",
+  error: "text-rose-300",
+  loading: "text-slate-400",
+};
+
 export function StatusMessage({
   tone = "info",
   title,
   children,
   className = "",
+  appearance = "light",
 }: StatusMessageProps) {
   const Icon = getIcon(tone);
+  const activeToneClasses = appearance === "dark" ? darkToneClasses : toneClasses;
+  const activeIconClasses = appearance === "dark" ? darkIconClasses : iconClasses;
 
   return (
-    <div className={`rounded-lg border px-3 py-2 text-sm ${toneClasses[tone]} ${className}`}>
+    <div className={`rounded-lg border px-3 py-2 text-sm ${activeToneClasses[tone]} ${className}`}>
       <div className="flex gap-2">
         <Icon
           size={17}
           className={`mt-0.5 shrink-0 ${tone === "loading" ? "animate-spin" : ""} ${
-            iconClasses[tone]
+            activeIconClasses[tone]
           }`}
         />
         <div className="min-w-0">

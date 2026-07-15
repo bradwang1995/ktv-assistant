@@ -238,7 +238,7 @@ export default function DisplayPage() {
     sendRestartCurrentItem(currentItem);
   };
 
-  const handlePauseToggle = () => {
+  const handlePauseToggle = useCallback(() => {
     if (!currentItem) return;
     setPlayerIssue(null);
 
@@ -248,7 +248,26 @@ export default function DisplayPage() {
     }
 
     playerHandleRef.current?.play();
-  };
+  }, [currentItem, playerStatus]);
+
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (
+        event.code !== "Space" ||
+        event.repeat ||
+        isEditableEventTarget(event.target)
+      ) {
+        return;
+      }
+
+      event.preventDefault();
+      (document.activeElement as HTMLElement | null)?.blur();
+      handlePauseToggle();
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [handlePauseToggle]);
 
   const currentProgress = getPlayerProgressForItem(playerProgress, currentItem?.id ?? null);
   const pauseButtonLabel =
@@ -261,7 +280,7 @@ export default function DisplayPage() {
     playerStatus === "playing" || playerStatus === "buffering" ? Pause : Play;
 
   return (
-    <main className="relative min-h-screen overflow-hidden bg-slate-950 text-white">
+    <main className="app-no-select relative min-h-screen overflow-hidden bg-slate-950 text-white">
       <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_18%_20%,rgba(20,184,166,0.22),transparent_30%),radial-gradient(circle_at_78%_78%,rgba(251,113,133,0.18),transparent_28%)]" />
 
       <div className="relative z-10 flex min-h-screen flex-col">
@@ -340,9 +359,11 @@ export default function DisplayPage() {
               />
             </div>
             <div className="min-w-0 text-center">
-              <h2 className="truncate text-xl font-semibold tracking-normal sm:text-2xl">
-                {currentItem?.title ?? "等待点歌"}
-              </h2>
+              {currentItem ? (
+                <h2 className="truncate text-xl font-semibold tracking-normal sm:text-2xl">
+                  {currentItem.title}
+                </h2>
+              ) : null}
               {playerIssue ? (
                 <p className="mt-2 text-sm font-medium text-rose-200">{playerIssue}</p>
               ) : null}
@@ -361,7 +382,10 @@ export default function DisplayPage() {
                 <div className="flex items-center gap-1.5 rounded-xl border border-white/15 bg-white/[0.07] p-1.5 shadow-lg shadow-black/20">
                   <button
                     type="button"
-                    onClick={handleRestart}
+                    onClick={(event) => {
+                      handleRestart();
+                      event.currentTarget.blur();
+                    }}
                     className="inline-flex min-h-10 items-center gap-2 rounded-lg border border-white/15 bg-white/10 px-3 py-2 text-sm font-semibold text-white transition hover:bg-white/20 focus:outline-none focus:ring-4 focus:ring-white/20"
                   >
                     <RotateCcw size={17} />
@@ -369,7 +393,10 @@ export default function DisplayPage() {
                   </button>
                   <button
                     type="button"
-                    onClick={handlePauseToggle}
+                    onClick={(event) => {
+                      handlePauseToggle();
+                      event.currentTarget.blur();
+                    }}
                     className="inline-flex min-h-10 items-center gap-2 rounded-lg bg-teal-400 px-3 py-2 text-sm font-bold text-slate-950 transition hover:bg-teal-300 focus:outline-none focus:ring-4 focus:ring-teal-300/30"
                   >
                     <PauseButtonIcon size={17} />
@@ -377,7 +404,10 @@ export default function DisplayPage() {
                   </button>
                   <button
                     type="button"
-                    onClick={handleNext}
+                    onClick={(event) => {
+                      handleNext();
+                      event.currentTarget.blur();
+                    }}
                     className="inline-flex min-h-10 items-center gap-2 rounded-lg border border-rose-300/25 bg-rose-300/15 px-3 py-2 text-sm font-semibold text-rose-50 transition hover:bg-rose-300/25 focus:outline-none focus:ring-4 focus:ring-rose-300/20"
                   >
                     <SkipForward size={17} />
@@ -497,6 +527,19 @@ function YouTubeQuotaStatus({
 
 function playbackLoadingKey(queueItemId: string, updatedAt: string) {
   return `${queueItemId}:${updatedAt}`;
+}
+
+function isEditableEventTarget(target: EventTarget | null) {
+  if (!(target instanceof HTMLElement)) {
+    return false;
+  }
+
+  return (
+    target instanceof HTMLInputElement ||
+    target instanceof HTMLTextAreaElement ||
+    target instanceof HTMLSelectElement ||
+    target.isContentEditable
+  );
 }
 
 function ConnectionBadge({

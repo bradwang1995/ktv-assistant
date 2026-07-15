@@ -9,6 +9,7 @@ import {
   touchRoomActivityInD1,
 } from "./d1Repository";
 import { apiError, jsonResponse } from "./json";
+import { recordQueuedSearchRecommendation } from "./kvCache";
 import { applyRoomCommand, type RoomCommandMessage } from "./roomCommands";
 import { isValidRoomId } from "./roomIds";
 import type { Env } from "./types";
@@ -236,6 +237,23 @@ export class RoomDurableObject {
     };
 
     await saveRoomSnapshotToD1(this.env.DB, nextSnapshot);
+
+    if (message.type === "ADD_QUEUE_ITEM") {
+      this.state.waitUntil(
+        recordQueuedSearchRecommendation(this.env.SEARCH_CACHE, message.payload).catch(
+          (error) => {
+            console.error(
+              JSON.stringify({
+                event: "queued-recommendation-write-failed",
+                roomId,
+                videoId: message.payload.videoId,
+                error: error instanceof Error ? error.message : "Unknown KV error",
+              }),
+            );
+          },
+        ),
+      );
+    }
 
     return nextSnapshot;
   }

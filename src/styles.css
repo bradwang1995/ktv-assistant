@@ -3,7 +3,7 @@
 @tailwind utilities;
 
 :root {
-  color-scheme: only light;
+  color-scheme: dark;
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
@@ -14,11 +14,21 @@ html,
 body,
 #root {
   min-height: 100%;
+  background: #020617;
 }
 
 body {
   margin: 0;
-  background: #f8fafc;
+  background: #020617;
+  overscroll-behavior-y: none;
+}
+
+.mobile-safe-header {
+  padding-top: max(0.75rem, env(safe-area-inset-top));
+}
+
+.mobile-safe-footer {
+  padding-bottom: max(0.75rem, env(safe-area-inset-bottom));
 }
 
 button,
@@ -52,6 +62,33 @@ iframe {
   scrollbar-width: thin;
 }
 
+.scrollbar-soft-dark {
+  scrollbar-color: #475569 transparent;
+  scrollbar-width: thin;
+}
+
+.app-no-select,
+.app-no-select * {
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+}
+
+.app-no-select input,
+.app-no-select textarea,
+.app-no-select [contenteditable="true"] {
+  -webkit-user-select: text;
+  user-select: text;
+  -webkit-touch-callout: default;
+}
+
+.app-no-select img,
+.app-no-select video,
+.app-no-select iframe {
+  -webkit-user-drag: none;
+  user-drag: none;
+}
+
 @keyframes create-room-gradient {
   0%,
   100% {
@@ -74,7 +111,7 @@ iframe {
   }
 }
 
-@keyframes create-room-hint-pan {
+@keyframes create-room-arrow-pan {
   0%,
   100% {
     transform: translateX(0);
@@ -101,14 +138,14 @@ iframe {
   animation: create-room-shimmer 3.8s ease-in-out infinite;
 }
 
-.create-room-hint-arrow {
-  animation: create-room-hint-pan 1.8s ease-in-out infinite;
+.create-room-cta-arrow {
+  animation: create-room-arrow-pan 1.4s ease-in-out infinite;
 }
 
 @media (prefers-reduced-motion: reduce) {
   .create-room-cta,
   .create-room-cta::after,
-  .create-room-hint-arrow {
+  .create-room-cta-arrow {
     animation: none;
   }
 }

@@ -86,7 +86,7 @@ async function createRoom(request: Request, env: Env) {
 
   for (let attempt = 0; attempt < CREATE_ROOM_ATTEMPTS; attempt += 1) {
     const roomId = createRoomId();
-    const fallbackDisplayName = `K歌房 ${roomId}`;
+    const fallbackDisplayName = "K歌房";
     const requestBody = await request.clone().json().catch(() => null);
     const displayName = normalizeRoomDisplayName(
       requestBody && typeof requestBody === "object" && "displayName" in requestBody

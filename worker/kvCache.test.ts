@@ -3,9 +3,11 @@ import type { SearchResponse, VideoSearchResult } from "../src/types/youtube";
 import {
   readSearchCache,
   readSearchRecommendations,
+  recordQueuedSearchRecommendation,
   searchCacheFamilyKey,
   searchCacheIndexKey,
   searchRecommendationsKey,
+  touchSearchCache,
   writeSearchCache,
 } from "./kvCache";
 import { buildSearchQueryFamily } from "./searchFamily";
@@ -29,6 +31,14 @@ class MemoryKv {
   async put(key: string, value: string, options?: KVNamespacePutOptions) {
     this.values.set(key, value);
     this.writes.push({ key, value, options });
+  }
+
+  async list(options: { prefix?: string } = {}) {
+    const keys = [...this.values.keys()]
+      .filter((key) => !options.prefix || key.startsWith(options.prefix))
+      .map((name) => ({ name }));
+
+    return { keys, list_complete: true };
   }
 }
 
@@ -95,6 +105,68 @@ describe("KV search cache", () => {
 
     expect(recommendations).toHaveLength(100);
     expect(new Set(recommendations.map((result) => result.videoId)).size).toBe(100);
+  });
+
+  it("promotes only the strongest results from the latest search ahead of prior hits", async () => {
+    const kv = new MemoryKv();
+    const earlierFamily = buildSearchQueryFamily("Earlier Singer");
+    const latestFamily = buildSearchQueryFamily("Latest Singer");
+
+    await writeSearchCache(
+      kv,
+      earlierFamily,
+      buildResponse("Earlier Singer", earlierFamily.normalizedQuery, buildResults(12)),
+    );
+    await writeSearchCache(
+      kv,
+      latestFamily,
+      buildResponse("Latest Singer", latestFamily.normalizedQuery, buildResults(12, 100)),
+    );
+
+    const recommendations = await readSearchRecommendations(kv, 24);
+
+    expect(recommendations.slice(0, 8).map((result) => result.videoId)).toEqual(
+      buildResults(8, 100).map((result) => result.videoId),
+    );
+    expect(recommendations[8].videoId).toBe("video-0");
+    expect(recommendations.findIndex((result) => result.videoId === "video-108")).toBeGreaterThan(
+      recommendations.findIndex((result) => result.videoId === "video-0"),
+    );
+  });
+
+  it("moves recently reused searches and actually queued songs to the front", async () => {
+    const kv = new MemoryKv();
+    const firstFamily = buildSearchQueryFamily("First Singer");
+    const secondFamily = buildSearchQueryFamily("Second Singer");
+
+    await writeSearchCache(
+      kv,
+      firstFamily,
+      buildResponse("First Singer", firstFamily.normalizedQuery, buildResults(12)),
+    );
+    await writeSearchCache(
+      kv,
+      secondFamily,
+      buildResponse("Second Singer", secondFamily.normalizedQuery, buildResults(12, 100)),
+    );
+
+    const cached = await readSearchCache(kv, firstFamily);
+    expect(cached).not.toBeNull();
+    await touchSearchCache(kv, cached!.familyHash, cached!.entry);
+    expect((await readSearchRecommendations(kv, 1))[0].videoId).toBe("video-0");
+
+    await recordQueuedSearchRecommendation(kv, {
+      videoId: "video-11",
+      title: "Actually queued song",
+      channelTitle: "Chosen by a guest",
+    });
+    const queuedFirst = await readSearchRecommendations(kv, 1);
+
+    expect(queuedFirst[0]).toMatchObject({
+      videoId: "video-11",
+      title: "Actually queued song",
+      reasons: expect.arrayContaining(["recently queued"]),
+    });
   });
 
   it("prunes low-ranked hits when a cache entry would be too large", async () => {

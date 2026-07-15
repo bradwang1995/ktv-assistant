@@ -1,41 +1,8 @@
 const MAX_ROOM_DISPLAY_NAME_LENGTH = 40;
+const DEFAULT_ROOM_DISPLAY_NAME = "K歌房";
 
-interface NavigatorWithUserAgentData {
-  platform: string;
-  userAgent: string;
-  userAgentData?: {
-    platform?: string;
-  };
-}
-
-export function createDeviceRoomDisplayName(
-  navigatorLike: NavigatorWithUserAgentData = navigator as NavigatorWithUserAgentData,
-) {
-  const platform = `${navigatorLike.userAgentData?.platform ?? navigatorLike.platform} ${
-    navigatorLike.userAgent
-  }`.toLowerCase();
-
-  if (platform.includes("windows") || platform.includes("win32")) {
-    return "这台 Windows 电脑的 K 歌房";
-  }
-
-  if (platform.includes("mac")) {
-    return "这台 Mac 的 K 歌房";
-  }
-
-  if (platform.includes("iphone")) {
-    return "这台 iPhone 的 K 歌房";
-  }
-
-  if (platform.includes("ipad")) {
-    return "这台 iPad 的 K 歌房";
-  }
-
-  if (platform.includes("android")) {
-    return "这台 Android 设备的 K 歌房";
-  }
-
-  return "我的 K 歌房";
+export function createRoomDisplayName() {
+  return DEFAULT_ROOM_DISPLAY_NAME;
 }
 
 export function normalizeRoomDisplayName(value: unknown, fallback: string) {
@@ -54,7 +21,17 @@ export function normalizeRoomDisplayName(value: unknown, fallback: string) {
 
 export function visibleRoomDisplayName(displayName: string | undefined, roomId: string) {
   const legacyDisplayName = `K歌房 ${roomId}`;
-  const normalized = normalizeRoomDisplayName(displayName, legacyDisplayName);
+  const normalized = normalizeRoomDisplayName(displayName, DEFAULT_ROOM_DISPLAY_NAME);
+  const deviceGeneratedName = /^这台 .+的 K 歌房$/;
 
-  return normalized === legacyDisplayName ? "朋友的 K 歌房" : normalized;
+  if (
+    normalized === legacyDisplayName ||
+    normalized === "我的 K 歌房" ||
+    normalized === "朋友的 K 歌房" ||
+    deviceGeneratedName.test(normalized)
+  ) {
+    return DEFAULT_ROOM_DISPLAY_NAME;
+  }
+
+  return normalized;
 }

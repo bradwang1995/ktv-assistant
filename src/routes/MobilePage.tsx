@@ -86,9 +86,9 @@ export default function MobilePage() {
   };
 
   return (
-    <main className="h-[100dvh] overflow-hidden bg-slate-950 text-slate-950">
-      <div className="mx-auto flex h-full min-h-0 w-full max-w-3xl flex-col overflow-hidden border-x border-white/10 bg-slate-100 shadow-2xl shadow-black/40">
-        <header className="relative z-[60] shrink-0 overflow-hidden border-b border-white/10 bg-slate-950 px-4 py-3 text-white">
+    <main className="app-no-select h-[100dvh] overflow-hidden bg-slate-950 text-white">
+      <div className="mx-auto flex h-full min-h-0 w-full max-w-3xl flex-col overflow-hidden border-x border-white/10 bg-slate-950 shadow-2xl shadow-black/40">
+        <header className="mobile-safe-header relative z-[60] shrink-0 overflow-hidden border-b border-white/10 bg-slate-950 px-4 pb-3 text-white">
           <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_12%_10%,rgba(20,184,166,0.2),transparent_42%),radial-gradient(circle_at_88%_80%,rgba(251,113,133,0.13),transparent_38%)]" />
           <div className="relative flex items-center justify-between gap-3">
             <div>
@@ -570,11 +570,6 @@ function SearchTab({
     latestSearchRequestRef.current = requestId;
     setToast(null);
     setDuplicateCandidate(null);
-    setSearchResponse(null);
-    setVisibleResultCount(SEARCH_RESULT_PAGE_SIZE);
-    setSelected(null);
-    setActivePreviewVideoId(null);
-    cancelPendingPreview();
     searchMutation.mutate({
       query: trimmedQuery,
       searchType: nextSearchType,
@@ -638,37 +633,29 @@ function SearchTab({
 
   const showingRecommendations = !searchResponse;
   const isLoadingResults =
-    searchMutation.isPending || (showingRecommendations && recommendationsQuery.isPending);
+    activeResults.length === 0 &&
+    (searchMutation.isPending || (showingRecommendations && recommendationsQuery.isPending));
   const resultHeading = showingRecommendations ? "缓存推荐" : "搜索结果";
   const resultCountLabel = isLoadingResults
     ? "加载中"
-    : showingRecommendations
-      ? `${visibleResults.length}/${activeResults.length} 首`
-      : `${visibleResults.length}/${activeResults.length} 首`;
+    : `${visibleResults.length}/${activeResults.length} 首`;
 
   return (
-    <section className="relative isolate z-0 flex min-h-0 flex-1 flex-col overflow-hidden bg-slate-100">
+    <section className="relative isolate z-0 flex min-h-0 flex-1 flex-col overflow-hidden bg-slate-950">
       <MobileToast toast={toast} />
       <AddToQueueTrail trail={addTrail} />
 
       <div className="z-50 isolate shrink-0 overflow-hidden border-b border-white/10 bg-slate-900 px-4 pb-2.5 pt-3 shadow-lg shadow-slate-950/15">
         <form onSubmit={submitSearch}>
-          <div className="grid grid-cols-[4.65rem_minmax(0,1fr)_4.25rem_2.5rem] gap-1.5 sm:grid-cols-[5.25rem_minmax(0,1fr)_4.75rem_2.75rem] sm:gap-2">
+          <div className="grid grid-cols-[4.75rem_minmax(0,1fr)_5rem_3.25rem] gap-1.5 sm:grid-cols-[5.25rem_minmax(0,1fr)_5.25rem_3.5rem] sm:gap-2">
             <label className="sr-only" htmlFor="search-type">
               搜索类型
             </label>
             <select
               id="search-type"
               value={searchType}
-              onChange={(event) => {
-                const nextSearchType = event.target.value as SearchType;
-                setSearchType(nextSearchType);
-
-                if (query.trim() && searchResponse) {
-                  runSearch(query, nextSearchType, includeOriginalVocal);
-                }
-              }}
-              className="h-11 rounded-lg border border-white/15 bg-slate-800 px-2 text-base font-semibold text-white outline-none transition focus:border-teal-300 focus:ring-4 focus:ring-teal-300/15"
+              onChange={(event) => setSearchType(event.target.value as SearchType)}
+              className="h-12 rounded-lg border border-white/15 bg-slate-800 px-2 text-base font-semibold text-white outline-none transition focus:border-teal-300 focus:ring-4 focus:ring-teal-300/15"
             >
               <option value="song">歌名</option>
               <option value="artist">歌手</option>
@@ -679,42 +666,24 @@ function SearchTab({
             <input
               id="song-search"
               value={query}
-              onChange={(event) => {
-                setQuery(event.target.value);
-
-                if (!event.target.value.trim()) {
-                  latestSearchRequestRef.current += 1;
-                  searchMutation.reset();
-                  setSearchResponse(null);
-                  setVisibleResultCount(SEARCH_RESULT_PAGE_SIZE);
-                  setSelected(null);
-                  setActivePreviewVideoId(null);
-                  cancelPendingPreview();
-                }
-              }}
+              onChange={(event) => setQuery(event.target.value)}
               placeholder={searchType === "artist" ? "歌手名" : "歌名"}
               enterKeyHint="search"
-              className="h-11 min-w-0 rounded-lg border border-white/15 bg-slate-800 px-3 text-base text-white outline-none transition placeholder:text-slate-400 focus:border-teal-300 focus:ring-4 focus:ring-teal-300/15"
+              className="h-12 min-w-0 rounded-lg border border-white/15 bg-slate-800 px-3 text-base text-white outline-none transition placeholder:text-slate-400 focus:border-teal-300 focus:ring-4 focus:ring-teal-300/15"
             />
             <PillToggle
               label="原唱"
               checked={includeOriginalVocal}
-              onChange={(checked) => {
-                setIncludeOriginalVocal(checked);
-
-                if (query.trim() && searchResponse) {
-                  runSearch(query, searchType, checked);
-                }
-              }}
+              onChange={setIncludeOriginalVocal}
             />
             <button
               type="submit"
               aria-label="搜索"
               title="搜索"
               disabled={!query.trim() || searchMutation.isPending}
-              className="inline-flex h-11 w-10 shrink-0 items-center justify-center rounded-lg bg-teal-300 text-slate-950 transition hover:bg-teal-200 disabled:cursor-not-allowed disabled:bg-slate-700 disabled:text-slate-500 sm:w-11"
+              className="inline-flex h-12 w-[3.25rem] shrink-0 items-center justify-center rounded-lg bg-teal-300 text-slate-950 transition hover:bg-teal-200 disabled:cursor-not-allowed disabled:bg-slate-700 disabled:text-slate-500 sm:w-14"
             >
-              <Search size={18} />
+              <Search size={21} />
             </button>
           </div>
         </form>
@@ -728,16 +697,16 @@ function SearchTab({
 
       <div
         ref={scrollContainerRef}
-        className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 pb-3 scrollbar-soft"
+        className="min-h-0 flex-1 overflow-y-auto overscroll-contain bg-[radial-gradient(circle_at_18%_8%,rgba(20,184,166,0.10),transparent_34%),radial-gradient(circle_at_88%_82%,rgba(251,113,133,0.08),transparent_32%)] px-4 pb-3 scrollbar-soft-dark"
       >
         {searchMutation.isError ? (
-          <StatusMessage tone="error" title="搜索失败" className="mt-4">
+          <StatusMessage tone="error" title="搜索失败" appearance="dark" className="mt-4">
             {searchErrorMessage(searchMutation.error)}
           </StatusMessage>
         ) : null}
 
         {recommendationsQuery.isError && showingRecommendations ? (
-          <StatusMessage tone="warning" title="推荐加载失败" className="mt-4">
+          <StatusMessage tone="warning" title="推荐加载失败" appearance="dark" className="mt-4">
             {searchErrorMessage(recommendationsQuery.error)}
           </StatusMessage>
         ) : null}
@@ -745,19 +714,19 @@ function SearchTab({
         {isLoadingResults ? (
           <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4">
             {Array.from({ length: SEARCH_RESULT_PAGE_SIZE }, (_, item) => (
-              <div key={item} className="aspect-video animate-pulse rounded-lg bg-slate-200" />
+              <div key={item} className="aspect-[16/11] animate-pulse rounded-xl bg-slate-800" />
             ))}
           </div>
         ) : null}
 
         {!isLoadingResults && searchResponse && activeResults.length === 0 ? (
-          <StatusMessage tone="info" className="mt-5">
+          <StatusMessage tone="info" appearance="dark" className="mt-5">
             没有找到合适的视频。
           </StatusMessage>
         ) : null}
 
         {!isLoadingResults && showingRecommendations && activeResults.length === 0 ? (
-          <StatusMessage tone="info" className="mt-5">
+          <StatusMessage tone="info" appearance="dark" className="mt-5">
             暂无推荐内容。
           </StatusMessage>
         ) : null}
@@ -783,24 +752,24 @@ function SearchTab({
           </div>
           <div ref={loadMoreRef} className="mt-4 min-h-12">
             {isLoadingMore ? (
-              <StatusMessage tone="loading">正在加载更多缓存结果</StatusMessage>
+              <StatusMessage tone="loading" appearance="dark">正在加载更多缓存结果</StatusMessage>
             ) : canLoadMore ? (
               <button
                 type="button"
                 onClick={loadMoreResults}
-                className="w-full rounded-lg border border-slate-300 bg-white px-4 py-3 text-base font-semibold text-slate-700 transition hover:bg-slate-50"
+                className="w-full rounded-lg border border-white/15 bg-white/[0.07] px-4 py-3 text-base font-semibold text-slate-100 transition hover:bg-white/10"
               >
                 加载更多
               </button>
             ) : (
-              <p className="py-3 text-center text-sm text-slate-500">已经显示全部缓存结果</p>
+              <p className="py-3 text-center text-sm text-slate-400">已经显示全部缓存结果</p>
             )}
           </div>
           </>
         ) : null}
       </div>
 
-      <footer className="z-20 shrink-0 border-t border-white/10 bg-slate-950 px-4 py-3 shadow-[0_-12px_30px_rgba(15,23,42,0.14)]">
+      <footer className="mobile-safe-footer z-20 shrink-0 border-t border-white/10 bg-slate-950 px-4 pt-3 shadow-[0_-12px_30px_rgba(2,6,23,0.5)]">
         <button
           type="button"
           onClick={addSelectedSong}
@@ -820,6 +789,7 @@ function SearchTab({
         title="歌单里已经有这首歌"
         body={duplicateCandidate?.title}
         confirmLabel="继续点歌"
+        appearance="dark"
         onCancel={() => setDuplicateCandidate(null)}
         onConfirm={() => {
           if (duplicateCandidate) {
@@ -857,7 +827,7 @@ function PillToggle({
       type="button"
       aria-pressed={checked}
       onClick={() => onChange(!checked)}
-      className={`inline-flex h-11 items-center justify-center gap-1 rounded-full border px-1.5 text-xs font-semibold transition focus:outline-none focus:ring-4 focus:ring-teal-300/15 ${
+      className={`inline-flex h-12 items-center justify-center gap-1.5 rounded-lg border px-2 text-base font-semibold transition focus:outline-none focus:ring-4 focus:ring-teal-300/15 ${
         checked
           ? "border-teal-300 bg-teal-300 text-slate-950"
           : "border-white/15 bg-slate-800 text-slate-300"
@@ -958,17 +928,24 @@ function CandidateVideoCard({
       aria-label={`选择 ${result.title}`}
       onPointerDownCapture={onSelect}
       onKeyDown={handleKeyDown}
-      className={`relative isolate z-0 aspect-video cursor-pointer overflow-hidden rounded-lg border bg-white text-left transition focus:outline-none focus:ring-4 ${
+      className={`relative isolate z-0 cursor-pointer overflow-hidden rounded-xl border bg-slate-900 text-left shadow-lg shadow-black/20 transition focus:outline-none focus:ring-4 ${
         selected
-          ? "border-teal-500 ring-4 ring-teal-100"
-          : "border-slate-200 hover:border-slate-300 focus:border-teal-500 focus:ring-teal-100"
+          ? "border-teal-300 ring-2 ring-teal-300/35"
+          : "border-white/10 hover:border-white/25 focus:border-teal-300 focus:ring-teal-300/25"
       }`}
     >
-      <CandidatePreview
-        result={result}
-        active={previewActive}
-        pending={previewPending}
-      />
+      <div className="aspect-video overflow-hidden">
+        <CandidatePreview
+          result={result}
+          active={previewActive}
+          pending={previewPending}
+        />
+      </div>
+      <div className="min-h-[3.5rem] border-t border-white/10 bg-slate-900/95 px-2.5 py-2">
+        <h3 className="line-clamp-2 text-base font-semibold leading-5 text-slate-100">
+          {result.title}
+        </h3>
+      </div>
       {duplicate || selected ? (
         <div className="pointer-events-none absolute right-1.5 top-1.5 z-[1] flex max-w-[calc(100%-0.75rem)] flex-col items-end gap-1">
           {duplicate ? (
@@ -1020,6 +997,7 @@ function CandidatePreview({
         src={result.thumbnailUrl ?? youtubeThumbnailUrl(result.videoId)}
         alt=""
         loading="lazy"
+        draggable={false}
         className="h-full w-full object-cover"
       />
       {active ? (
@@ -1135,15 +1113,15 @@ function QueueTab({
   };
 
   return (
-    <section className="min-h-0 flex-1 overflow-y-auto bg-slate-100 px-4 py-4 scrollbar-soft">
+    <section className="min-h-0 flex-1 overflow-y-auto bg-[radial-gradient(circle_at_16%_6%,rgba(20,184,166,0.10),transparent_32%),linear-gradient(#020617,#0f172a)] px-4 py-4 text-white scrollbar-soft-dark">
       {actionError ? (
-        <StatusMessage tone="warning" title="操作未完成" className="mb-4">
+        <StatusMessage tone="warning" title="操作未完成" appearance="dark" className="mb-4">
           {actionError}
         </StatusMessage>
       ) : null}
 
-      <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
-        <p className="text-sm font-semibold text-teal-700">正在播放</p>
+      <div className="rounded-xl border border-white/10 bg-white/[0.06] p-4 shadow-lg shadow-black/20">
+        <p className="text-base font-semibold text-teal-300">正在播放</p>
         {currentItem ? (
           <>
             <div className="mt-2 flex items-center gap-3">
@@ -1151,12 +1129,13 @@ function QueueTab({
                 <img
                   src={currentItem.thumbnailUrl}
                   alt=""
+                  draggable={false}
                   className="h-16 w-24 rounded-md object-cover"
                 />
               ) : null}
               <div className="min-w-0">
-                <h2 className="line-clamp-2 font-semibold text-slate-950">{currentItem.title}</h2>
-                <p className="mt-1 truncate text-sm text-slate-500">
+                <h2 className="line-clamp-2 text-base font-semibold text-white">{currentItem.title}</h2>
+                <p className="mt-1 truncate text-sm text-slate-400">
                   {currentItem.channelTitle ?? "未知频道"}
                 </p>
               </div>
@@ -1165,7 +1144,7 @@ function QueueTab({
               <button
                 type="button"
                 onClick={() => handlePlaybackControl("restart")}
-                className="inline-flex items-center justify-center gap-2 rounded-md border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
+                className="inline-flex items-center justify-center gap-2 rounded-lg border border-white/15 bg-white/[0.07] px-3 py-2.5 text-base font-semibold text-slate-100 transition hover:bg-white/10"
               >
                 <RotateCcw size={16} />
                 重唱
@@ -1173,7 +1152,7 @@ function QueueTab({
               <button
                 type="button"
                 onClick={() => handlePlaybackControl("skip")}
-                className="inline-flex items-center justify-center gap-2 rounded-md border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
+                className="inline-flex items-center justify-center gap-2 rounded-lg border border-white/15 bg-white/[0.07] px-3 py-2.5 text-base font-semibold text-slate-100 transition hover:bg-white/10"
               >
                 <SkipForward size={16} />
                 切歌
@@ -1181,21 +1160,21 @@ function QueueTab({
             </div>
           </>
         ) : (
-          <p className="mt-2 text-base text-slate-500">当前没有视频播放</p>
+          <p className="mt-2 text-base text-slate-400">当前没有视频播放</p>
         )}
       </div>
 
       <div className="mt-5 flex items-center justify-between">
         <h2 className="text-lg font-semibold tracking-normal">即将播放</h2>
-        <span className="text-sm text-slate-500">
+        <span className="text-sm text-slate-400">
           {queuedItems.length} 首
         </span>
       </div>
 
       {queuedItems.length === 0 ? (
-        <div className="mt-3 rounded-lg border border-dashed border-slate-300 px-4 py-10 text-center">
+        <div className="mt-3 rounded-xl border border-dashed border-white/15 bg-white/[0.04] px-4 py-10 text-center">
           <ListMusic className="mx-auto text-slate-400" size={30} />
-          <p className="mt-2 text-base text-slate-500">歌单还是空的，去点第一首吧。</p>
+          <p className="mt-2 text-base text-slate-400">歌单还是空的，去点第一首吧。</p>
         </div>
       ) : (
         <div className="mt-3 grid gap-3">
@@ -1216,6 +1195,7 @@ function QueueTab({
         title={confirmTitle}
         body={confirmAction?.item.title}
         destructive={confirmAction?.type === "remove"}
+        appearance="dark"
         onCancel={() => setConfirmAction(null)}
         onConfirm={handleConfirm}
       />
@@ -1235,28 +1215,28 @@ function QueueItemCard({
   onRemove: () => void;
 }) {
   return (
-    <article className="rounded-lg border border-slate-200 bg-white p-3 shadow-sm">
+    <article className="rounded-xl border border-white/10 bg-white/[0.06] p-3 shadow-lg shadow-black/20">
       <div className="flex gap-3">
         {item.thumbnailUrl ? (
-          <img src={item.thumbnailUrl} alt="" className="h-20 w-28 rounded-md object-cover" />
+          <img src={item.thumbnailUrl} alt="" draggable={false} className="h-20 w-28 rounded-md object-cover" />
         ) : (
-          <div className="grid h-20 w-28 place-items-center rounded-md bg-slate-100 text-slate-400">
+          <div className="grid h-20 w-28 place-items-center rounded-md bg-slate-800 text-slate-400">
             <Music2 size={24} />
           </div>
         )}
         <div className="min-w-0 flex-1">
-          <p className="text-xs font-medium text-rose-700">第 {index + 1} 首</p>
-          <h3 className="line-clamp-2 text-sm font-semibold leading-5 text-slate-950">
+          <p className="text-xs font-medium text-rose-300">第 {index + 1} 首</p>
+          <h3 className="line-clamp-2 text-base font-semibold leading-5 text-white">
             {item.title}
           </h3>
-          <p className="mt-1 truncate text-xs text-slate-500">{item.channelTitle ?? "未知频道"}</p>
+          <p className="mt-1 truncate text-sm text-slate-400">{item.channelTitle ?? "未知频道"}</p>
         </div>
       </div>
       <div className="mt-3 grid grid-cols-2 gap-2">
         <button
           type="button"
           onClick={onPromote}
-          className="inline-flex items-center justify-center gap-2 rounded-md border border-slate-200 px-3 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
+          className="inline-flex items-center justify-center gap-2 rounded-lg border border-white/15 px-3 py-2.5 text-base font-semibold text-slate-200 transition hover:bg-white/10"
         >
           <ArrowUpToLine size={16} />
           置顶
@@ -1264,7 +1244,7 @@ function QueueItemCard({
         <button
           type="button"
           onClick={onRemove}
-          className="inline-flex items-center justify-center gap-2 rounded-md border border-rose-200 px-3 py-2 text-sm font-semibold text-rose-700 transition hover:bg-rose-50"
+          className="inline-flex items-center justify-center gap-2 rounded-lg border border-rose-300/25 px-3 py-2.5 text-base font-semibold text-rose-200 transition hover:bg-rose-300/10"
         >
           <Trash2 size={16} />
           删歌
@@ -1289,10 +1269,10 @@ function ConnectionBadge({
     <span
       className={`inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-xs font-semibold ${
         connected
-          ? "bg-emerald-50 text-emerald-700"
+          ? "bg-emerald-300/15 text-emerald-200"
           : canUseLocalFallback
-            ? "bg-slate-100 text-slate-600"
-            : "bg-amber-50 text-amber-700"
+            ? "bg-white/10 text-slate-300"
+            : "bg-amber-300/15 text-amber-200"
       }`}
     >
       <Icon size={13} />

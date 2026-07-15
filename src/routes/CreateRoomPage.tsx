@@ -2,17 +2,17 @@ import {
   ArrowRight,
   LoaderCircle,
   MonitorPlay,
+  Quote,
   QrCode,
   Smartphone,
   Sparkles,
-  UsersRound,
 } from "lucide-react";
 import { useState } from "react";
 import type { ReactNode } from "react";
 import { useNavigate } from "react-router-dom";
 import { StatusMessage } from "../components/StatusMessage";
 import { ApiClientError, createRoomViaApi } from "../lib/apiClient";
-import { createDeviceRoomDisplayName } from "../lib/roomName";
+import { createRoomDisplayName } from "../lib/roomName";
 import { createRoomId, hydrateRoomSnapshot, readRoomSnapshot } from "../lib/roomState";
 
 export default function CreateRoomPage() {
@@ -25,7 +25,7 @@ export default function CreateRoomPage() {
     setNotice(null);
 
     try {
-      const roomDisplayName = createDeviceRoomDisplayName();
+      const roomDisplayName = createRoomDisplayName();
       const response = await createRoomViaApi(roomDisplayName);
 
       if (response.snapshot) {
@@ -35,7 +35,7 @@ export default function CreateRoomPage() {
       navigate(response.displayUrl);
     } catch (error) {
       const roomId = createRoomId();
-      readRoomSnapshot(roomId, createDeviceRoomDisplayName());
+      readRoomSnapshot(roomId, createRoomDisplayName());
 
       if (error instanceof ApiClientError && error.code === "NON_JSON_RESPONSE") {
         setNotice("当前是本地 Vite 模式，已使用本地房间继续。");
@@ -50,7 +50,7 @@ export default function CreateRoomPage() {
   };
 
   return (
-    <main className="relative min-h-screen overflow-hidden bg-slate-950 text-white">
+    <main className="app-no-select relative min-h-screen overflow-hidden bg-slate-950 text-white">
       <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_14%_18%,rgba(20,184,166,0.2),transparent_32%),radial-gradient(circle_at_86%_76%,rgba(251,113,133,0.16),transparent_30%)]" />
       <div className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-teal-300/50 to-transparent" />
 
@@ -66,8 +66,8 @@ export default function CreateRoomPage() {
             </div>
           </div>
           <div className="hidden items-center gap-2 rounded-full border border-white/10 bg-white/[0.06] px-3 py-2 text-xs font-medium text-slate-300 sm:flex">
-            <UsersRound size={15} className="text-rose-300" />
-            为朋友聚会而做
+            <Quote size={15} className="shrink-0 text-rose-300" />
+            在这个世界上，只有在唱歌的时候，我是绝对自由的。
           </div>
         </header>
 
@@ -90,46 +90,37 @@ export default function CreateRoomPage() {
                 type="button"
                 onClick={createRoom}
                 disabled={isCreating}
-                className="create-room-cta group relative isolate inline-flex min-h-16 min-w-[10.5rem] shrink-0 items-center justify-center gap-3 overflow-hidden rounded-2xl px-5 py-4 text-lg font-extrabold text-slate-950 transition focus:outline-none focus:ring-4 focus:ring-teal-200/40 disabled:cursor-wait disabled:opacity-60 sm:min-h-[4.5rem] sm:min-w-[15rem] sm:px-9 sm:text-xl"
+                className="create-room-cta group relative isolate inline-flex min-h-[4.5rem] min-w-[12rem] shrink-0 items-center justify-center gap-3 overflow-hidden rounded-2xl px-7 py-4 text-xl font-extrabold text-slate-950 transition focus:outline-none focus:ring-4 focus:ring-teal-200/40 disabled:cursor-wait disabled:opacity-60 sm:min-h-20 sm:min-w-[17rem] sm:px-10 sm:text-2xl"
               >
-                {isCreating ? (
-                  <LoaderCircle size={23} className="relative z-10 animate-spin" />
-                ) : (
-                  <ArrowRight
-                    size={24}
-                    className="relative z-10 transition-transform group-hover:translate-x-1"
-                  />
-                )}
                 <span className="relative z-10">
                   {isCreating ? "正在创建房间" : "创建房间"}
                 </span>
+                {isCreating ? (
+                  <LoaderCircle size={23} className="relative z-10 animate-spin" />
+                ) : (
+                  <ArrowRight size={24} className="create-room-cta-arrow relative z-10" />
+                )}
               </button>
-              <p className="ml-4 flex max-w-[7rem] items-center gap-2 text-xs leading-5 text-slate-300 sm:ml-10 sm:max-w-none sm:text-sm">
+              <p className="ml-7 flex max-w-[8rem] items-center gap-2 text-xs leading-5 text-slate-300 sm:ml-10 sm:max-w-none sm:text-sm">
                 <span>创建后自动打开大屏页</span>
-                <ArrowRight
-                  size={17}
-                  className="create-room-hint-arrow hidden shrink-0 text-teal-300 sm:block"
-                />
+                <ArrowRight size={17} className="shrink-0 text-teal-300" />
               </p>
             </div>
             {notice ? (
-              <StatusMessage tone="warning" className="mt-4">
+              <StatusMessage tone="warning" appearance="dark" className="mt-4">
                 {notice}
               </StatusMessage>
             ) : null}
           </div>
 
           <aside className="rounded-3xl border border-white/10 bg-white/[0.06] p-5 shadow-2xl shadow-black/25 backdrop-blur sm:p-7">
-            <div className="mb-5 flex items-end justify-between gap-4 border-b border-white/10 pb-5">
+            <div className="mb-5 border-b border-white/10 pb-5">
               <div>
                 <p className="text-xs font-semibold uppercase tracking-[0.18em] text-rose-300">
                   Ready in seconds
                 </p>
                 <h3 className="mt-2 text-2xl font-semibold tracking-tight">三步开始 K 歌</h3>
               </div>
-              <span className="rounded-lg bg-white/10 px-2.5 py-1.5 text-xs font-semibold text-slate-300">
-                1 个房间
-              </span>
             </div>
 
             <div className="grid gap-3">

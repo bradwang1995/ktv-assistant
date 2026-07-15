@@ -246,12 +246,19 @@ Last updated: 2026-07-15
 | --- | --- | --- |
 | PIT5-01 | P1 | Create 说明文案在“创建后”前固定换行，消除中文孤字/难看 wrap。 |
 | PIT5-02 | P1 | Create CTA 扩至桌面 240×72px，并加入无需 hover 的 teal/cyan/rose/amber 循环渐变、扫光和 reduced-motion fallback。 |
-| PIT5-03 | P1 | CTA 右侧说明拉开间距并加入持续向右引导；不新增竞争主操作。 |
+| PIT5-03 | P1 | CTA 右侧说明进一步拉开间距并保留静态箭头；持续移动的箭头只放在主按钮文字右侧，不新增竞争主操作。 |
 | PIT5-04 | P0 | Mobile 改为 `100dvh` 固定外壳；header、搜索/结果标题、footer 脱离 scroll，只有结果区 `overflow-y-auto`。 |
 | PIT5-05 | P0 | 删除搜索内容 `pb-24` 和内部 sticky footer；footer 使用固定 `shrink-0` 高度，结果到底不再产生额外底部留白。 |
-| PIT5-06 | P1 | Mobile 外壳、header、搜索栏和 footer 统一到 display 的 slate/teal 暗色主题，正文保留浅色缩略图画布并放大小字号。 |
-| PIT5-07 | P1 | 新房间使用浏览器可公开的平台信息生成“这台 Windows/Mac…的 K 歌房”，通过 create API 写入 D1；legacy id 标签显示为“朋友的 K 歌房”。 |
-| PIT5-08 | P1 | 新增房间名 normalization/platform/legacy tests，更新文档并完成桌面/窄屏浏览器布局验证。 |
+| PIT5-06 | P1 | Mobile 外壳、header、搜索栏、结果/preview 卡、歌单和 footer 全部统一到 display 的 slate/teal 暗色主题并放大小字号。 |
+| PIT5-07 | P1 | 新房间使用诚实的中性“K歌房”；不再根据 user agent 伪装成读取了电脑名或 Chrome Profile，legacy id/设备猜测标签也统一隐藏。 |
+| PIT5-08 | P1 | 房间名 tests 覆盖 normalization、中性默认值和 legacy label 清理；同步更新操作与发布文档。 |
+| PIT5-09 | P1 | Create 删除“1 个房间”badge，右上角替换为“在这个世界上，只有在唱歌的时候，我是绝对自由的。”。 |
+| PIT5-10 | P0 | Display 空 footer 不再显示“等待点歌”；Space 在非输入焦点全局切换暂停/继续，点击重播/暂停/下一首后主动释放焦点。 |
+| PIT5-11 | P0 | Mobile/Display 增加不可选择/不可长按拖图边界，保留输入编辑；消除截图中的蓝色文字和播放器选择层。 |
+| PIT5-12 | P0 | HTML/theme-color/color-scheme/body/safe-area 全部设为深色，Mobile 只让结果区滚动并使用深色 scrollbar，阻止 Safari 上下 browser chrome 和 overscroll 露白。 |
+| PIT5-13 | P1 | Preview card 在同一选中边框内恢复视频下方歌名，仍不显示 uploader/channel；搜索工具栏统一 16px 字号并放大原唱和搜索点击区。 |
+| PIT5-14 | P0 | 只有 submit 才搜索；输入、歌名/歌手和原唱变化不清空、不重查、不改变当前数量，pending 期间保留旧结果直到成功替换。 |
+| PIT5-15 | P0 | Recommendation pool 只强提升每次搜索前 8 条，cache hit 重提 family 头部，真实点歌置顶；family fallback 按 recency/hits 排序后轮转，避免最近搜索的随机尾部垄断。 |
 
 ## 4. Verification record
 
@@ -272,6 +279,7 @@ Last updated: 2026-07-15
 | 2026-07-15 repository rename | New/old GitHub remotes resolve to HEAD `d64f60f`；local origin 更新至 `bradwang1995/Karaoke-Assistant`；production root 返回 HTTP 200；no deploy。 |
 | 2026-07-15 pass 5 | Typecheck、15 files / 56 tests、production build、双 Worker dry-run、`git diff --check` passed。 |
 | 2026-07-15 pass 5 UI | Create 1280×720：CTA 240×72、持续 gradient、说明强制两行；Mobile 390×800：结果 `scrollTop 0→87`、`window.scrollY=0`，header/search/footer 坐标滚动前后完全一致。 |
+| 2026-07-15 pass 5 follow-up | Typecheck、15 files / 58 tests、production build、Wrangler 4.105 Room/Main 双 dry-run、`git diff --check` passed；新增 recommendation promotion/cache-hit/queued-song 和 neutral room-name regressions。Local Vite root HTTP 200；自动浏览器 transport 在连接时关闭，因此本记录不虚报新的截图/交互视觉通过。 |
 
 ### Fourth-round design QA（2026-07-15）
 

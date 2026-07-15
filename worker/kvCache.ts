@@ -1,4 +1,5 @@
 import { normalizeSearchQuery } from "../src/lib/queryNormalize";
+import type { QueueItemInput } from "../src/types/room";
 import type { SearchResponse } from "../src/types/youtube";
 import type { SearchQueryFamily } from "./searchFamily";
 
@@ -9,6 +10,7 @@ export const DEFAULT_SEARCH_CACHE_TTL_SECONDS = 60 * 60 * 24 * 365;
 export const DEFAULT_SEARCH_CACHE_MAX_ENTRY_BYTES = 512 * 1024;
 export const MAX_CACHED_SEARCH_RESULTS = 50;
 export const MAX_RECOMMENDED_SEARCH_RESULTS = 200;
+export const MAX_PROMOTED_RESULTS_PER_SEARCH = 8;
 
 interface JsonKvNamespace {
   get<T>(key: string, options: { type: "json" }): Promise<T | null>;
@@ -214,6 +216,46 @@ export async function touchSearchCache(
   await namespace.put(searchCacheFamilyKey(familyHash), value, {
     expiration: Math.floor(expiresAtMs / 1000),
   });
+
+  await updateSearchRecommendations(
+    namespace,
+    nextEntry.results,
+    Math.max(Math.floor((expiresAtMs - Date.now()) / 1000), 60),
+  );
+}
+
+export async function recordQueuedSearchRecommendation(
+  namespace: JsonKvNamespace | undefined,
+  item: QueueItemInput,
+  ttlSeconds = DEFAULT_SEARCH_CACHE_TTL_SECONDS,
+) {
+  if (!namespace) {
+    return;
+  }
+
+  const existing = await namespace.get<SearchRecommendationsEntry>(
+    searchRecommendationsKey(),
+    { type: "json" },
+  );
+  const existingResult = isValidRecommendationsEntry(existing)
+    ? existing.results.find((result) => result.videoId === item.videoId)
+    : undefined;
+
+  await updateSearchRecommendations(
+    namespace,
+    [
+      {
+        ...existingResult,
+        videoId: item.videoId,
+        title: item.title,
+        ...(item.channelTitle ? { channelTitle: item.channelTitle } : {}),
+        ...(item.thumbnailUrl ? { thumbnailUrl: item.thumbnailUrl } : {}),
+        score: Math.max(existingResult?.score ?? 0, 1_000_000),
+        reasons: uniqueValues(["recently queued", ...(existingResult?.reasons ?? [])]),
+      },
+    ],
+    ttlSeconds,
+  );
 }
 
 function buildSearchCacheEntry({
@@ -336,9 +378,12 @@ async function updateSearchRecommendations(
   const existing = await namespace.get<SearchRecommendationsEntry>(searchRecommendationsKey(), {
     type: "json",
   });
+  const promotedResults = nextResults.slice(0, MAX_PROMOTED_RESULTS_PER_SEARCH);
+  const remainingResults = nextResults.slice(MAX_PROMOTED_RESULTS_PER_SEARCH);
   const mergedResults = uniqueResults([
-    ...nextResults,
+    ...promotedResults,
     ...(isValidRecommendationsEntry(existing) ? existing.results : []),
+    ...remainingResults,
   ]).slice(0, MAX_RECOMMENDED_SEARCH_RESULTS);
   const entry: SearchRecommendationsEntry = {
     updatedAt: new Date().toISOString(),
@@ -371,11 +416,29 @@ async function readRecommendationsFromFamilyCaches(
       ),
     )
   ).filter(isValidSearchCacheEntry);
-  const results = entries
-    .sort((a, b) => cacheEntryTimestamp(b) - cacheEntryTimestamp(a))
-    .flatMap((entry) => entry.results);
+  const rankedGroups = entries
+    .sort((a, b) => recommendationEntryScore(b) - recommendationEntryScore(a))
+    .map((entry) => entry.results);
+  const interleavedResults: SearchResponse["results"] = [];
+  const seenVideoIds = new Set<string>();
+  const longestGroupLength = Math.max(0, ...rankedGroups.map((group) => group.length));
 
-  return uniqueResults(results).slice(0, limit);
+  for (let resultIndex = 0; resultIndex < longestGroupLength; resultIndex += 1) {
+    for (const group of rankedGroups) {
+      const result = group[resultIndex];
+
+      if (result && !seenVideoIds.has(result.videoId)) {
+        seenVideoIds.add(result.videoId);
+        interleavedResults.push(result);
+      }
+
+      if (interleavedResults.length >= limit) {
+        return interleavedResults.slice(0, limit);
+      }
+    }
+  }
+
+  return interleavedResults.slice(0, limit);
 }
 
 function isValidSearchCacheEntry(value: SearchCacheEntry | null): value is SearchCacheEntry {
@@ -413,6 +476,11 @@ function uniqueResults(results: SearchResponse["results"]) {
 function cacheEntryTimestamp(entry: SearchCacheEntry) {
   const value = Date.parse(entry.lastAccessedAt ?? entry.createdAt);
   return Number.isFinite(value) ? value : 0;
+}
+
+function recommendationEntryScore(entry: SearchCacheEntry) {
+  const sixHoursMs = 6 * 60 * 60 * 1000;
+  return cacheEntryTimestamp(entry) + Math.min(entry.hitCount, 100) * sixHoursMs;
 }
 
 function measureJsonBytes(value: unknown) {
