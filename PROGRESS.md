@@ -318,12 +318,15 @@ Current coverage：
 | 2026-07-13 pass 3 | Main `e7fc338f-11ff-42b9-9523-df64de2a06c6`；Room `92c36603-e923-4665-b334-d10cadd28f78`。 |
 | 2026-07-14 pass 4 | Main `ce2a851c-9f79-4fd3-ac70-337219ccbc13`；Room unchanged。 |
 | 2026-07-15 pass 5 | Main `bd5c8ece-23f3-4abe-97d4-fad3891a0fc1`；Room `9ec6503c-07cb-4a7c-8ff0-4236ab934e19`。 |
+| 2026-07-15 pass 5 follow-up | Main active deployment `c942af48-74f2-44c7-bf2d-17f35ae734ef`；Room active deployment `362b4d10-476e-47da-bb10-cf3c10716ca9`。 |
 
 Last local pass-4 smoke room `3r512238`：create CTA、mock search、单 iframe preview `start=30`、两首点歌、restart 保持当前 item、next 推进第二首且 progress value 为 `0`。Create 已确认 390×844 无横向 overflow、1280×720 无页面滚动；Display 已确认 dark 140px QR、无画质 selector、三键 panel。
 
 Production pass-4 smoke room `362x7342`：fresh D1 room 创建成功、WebSocket `实时已连接`、quota 50/50、QR Canvas 140px、画质 selector count 0、无 console error。
 
 Production pass-5 smoke room `113f4j5h`：production root HTTP 200；create API 与 snapshot room id 一致，D1 display name 为“这台 Windows 电脑的 K 歌房”；线上 CSS 包含 `create-room-gradient`；quota endpoint 正常返回剩余 49。
+
+Production pass-5 follow-up smoke room `3n2j6g1j`：root、display、mobile 均 HTTP 200；create response 与 D1 snapshot display name 均为中性“K歌房”；HTML `theme-color=#020617`，线上 CSS 包含 `app-no-select` 和 dark scrollbar；空查询返回 10 条 cached recommendations，quota 48/50。WebSocket `ADD_QUEUE_ITEM` 后 snapshot current video 为 `OKjmFVeIG8s`；远端 KV 首位先确认同一 video，公开 recommendation API 在最终一致性传播后也返回同一首，证明 queued-song promotion 已上线。
 
 Known limitation：本轮已在本地浏览器完成 responsive smoke，但测试视频在自动化环境返回 YouTube error 150；失败 iframe 已隐藏，仍不替代真实设备 autoplay/playsinline/pause-resume QA。YouTube 原生 title/avatar/branding 可能按官方策略出现，app 不遮挡或伪装。
 
