@@ -92,6 +92,35 @@ describe("search scoring", () => {
     expect(results[2].reasons).toContain("title does not match query");
   });
 
+  it("removes unrelated metadata from song-title search results", () => {
+    const results = rankSearchResultsForQuery(
+      [
+        {
+          videoId: "matching",
+          title: "年少有为 KTV 伴奏版",
+          channelTitle: "KTV Channel",
+          durationSeconds: 280,
+        },
+        {
+          videoId: "channel-only",
+          title: "热门华语歌曲合集",
+          channelTitle: "年少有为 Karaoke",
+          durationSeconds: 280,
+        },
+        {
+          videoId: "unrelated",
+          title: "完全不同的歌 official MV lyrics",
+          channelTitle: "Music Channel",
+          durationSeconds: 280,
+        },
+      ],
+      "年少有为",
+      { searchType: "song", includeOriginalVocal: true },
+    );
+
+    expect(results.map((result) => result.videoId)).toEqual(["matching"]);
+  });
+
   it("moves original-vocal results ahead when original vocals are requested", () => {
     const results = rankSearchResultsForQuery(
       [

@@ -32,6 +32,7 @@ export interface SearchResponse {
       exhausted: boolean;
       resetAt?: string;
       resetTimeZone?: string;
+      updatedAt?: string;
     };
     prunedResultCount?: number;
   };

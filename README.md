@@ -140,13 +140,13 @@ Runtime variables：
 
 | Variable | Value | 作用 |
 | --- | ---: | --- |
-| `YOUTUBE_SEARCH_DAILY_LIMIT` | `50` | Project search-call guardrail。 |
+| `YOUTUBE_SEARCH_DAILY_LIMIT` | `100` | Project `search.list` call guardrail。 |
 | `YOUTUBE_SEARCH_MAX_CALLS_PER_FILL` | `1` | 每个 cold family 最多一次 search。 |
 | `SEARCH_CACHE_TTL_DAYS` | `365` | KV cache TTL。 |
 | `SEARCH_CACHE_MAX_ENTRY_BYTES` | `524288` | Family payload 上限约 512 KiB。 |
 | `SEARCH_RATE_LIMIT_PER_MINUTE` | `20` | Room + identity search rate limit。 |
 
-Google 当前文档的默认 `search.list` bucket 是 100 calls/day、每次计 1 call；本项目主动限制为 50/day。实际平台上限以 Google Cloud Console 为准，项目变量只控制 app guardrail 和 estimate。
+Google 当前文档的默认 `search.list` bucket 是 100 calls/day、每次计 1 call；本项目 guardrail 与该默认值一致。单次 `search.list` 仍最多返回 50 条，这是独立的 response-size 限制。实际平台上限以 Google Cloud Console 为准，项目变量只控制 app guardrail 和 estimate。
 
 ## 4. 本地开发
 
@@ -208,7 +208,7 @@ Search 的目标不是每次只返回少量临时结果，而是用一次 cold r
 - 非空搜索 UI 最多取 50，先显示 10，再按 10 条从当前 response 展开。
 - 空查询 recommendation pool 聚合最多 200 条，并按 10 条自动扩展到缓存耗尽。
 - Cache hit、空查询推荐和 client-side load-more 不增加 search call。
-- 排序先保证 title/artist 相关，再考虑 KTV、伴奏、lyrics 和原唱意图。
+- 歌名模式先过滤 title 不相关结果；其余排序先保证 title/artist 相关，再考虑 KTV、伴奏、lyrics 和原唱意图。
 - Guardrails 通过 Wrangler variables 配置。
 
 Google `search.list` 当前 `maxResults` 是 0–50；`q` 支持 OR `|` 和 NOT `-`。额外 page request 会消耗新的 search call，因此默认只取第一页。
@@ -256,7 +256,7 @@ Hash input：
 canonicalQuery | artist | searchType | original-or-karaoke
 ```
 
-所以 song/artist、伴奏/原唱和明确 artist 的结果不会错误共享同一 family。
+所以 song/artist、伴奏/原唱和明确 artist 各有独立 family；歌名模式会显式合并同一 canonical song 的 KTV/原唱历史候选，再按当前 intent 重排，避免切换原唱时浪费 search call 或换成无关结果。
 
 Song/KTV aliases：
 
@@ -281,7 +281,7 @@ Original-vocal aliases：
 后来 original with lyrics
 ```
 
-Artist mode 使用 artist-oriented `ktv / karaoke / classic songs` 或 `lyrics / MV / official`。Aliases 以 `|` 合成最多 450 characters 的 broad query；hot path 使用第一条 source query，无需在 request 中调用 LLM。
+Song mode 的第一条 source query 是精确 canonical song title，确保一次 50-result fill 建立稳定的混合 candidate pool；KTV、artist 和 broad OR aliases 只作为后续 fallback。Artist mode 保持 artist-oriented `ktv / karaoke / classic songs` 或 `lyrics / MV / official` broad query。无需在 request 中调用 LLM。
 
 ### 6.4 Live fetch pipeline
 
@@ -290,8 +290,8 @@ Artist mode 使用 artist-oriented `ktv / karaoke / classic songs` 或 `lyrics /
 3. `search.list` 使用 `type=video`、`maxResults=50`、`videoEmbeddable=true`、`safeSearch=moderate`、`regionCode=CA`、`relevanceLanguage=zh-Hans`。
 4. Deduplicate by `videoId`。
 5. `videos.list(part=contentDetails)` 读取 duration，每 50 ids 一批。
-6. 针对 current user query 排序。
-7. 写 family cache、normalized indexes 和 recommendation pool。
+6. 歌名模式过滤 title miss / channel-only hit，再针对 current user query 和 vocal intent 排序。
+7. 写 family cache、intent-scoped normalized indexes 和 recommendation pool。
 8. 返回 requested slice，非空搜索最多 50 条。
 
 没有 `YOUTUBE_API_KEY` 时使用 mock provider。Quota exhausted 且 cache miss 时返回空 results 和 quota metadata；已有 cache 仍可使用。
@@ -306,8 +306,8 @@ Artist mode 使用 artist-oriented `ktv / karaoke / classic songs` 或 `lyrics /
 | Title prefix | +48 |
 | Title contains query | +40 |
 | Query tokens in title | +24 |
-| Channel-only match | +2 |
-| Song title miss | -72 |
+| Channel-only match | 歌名模式过滤；其他上下文 +2 |
+| Song title miss | 歌名模式过滤；底层 score -72 |
 | Artist in title/channel | +42 / +32 |
 | KTV / 卡拉OK / karaoke | 普通 KTV intent：+30 / +30 / +24 |
 | 伴奏 / instrumental | 普通 KTV intent：+20 / +16；原唱 intent：-30 / -28 |
@@ -317,7 +317,7 @@ Artist mode 使用 artist-oriented `ktv / karaoke / classic songs` 或 `lyrics /
 | Remix、tutorial、教学、shorts | Downrank |
 | Duration < 60s 或 > 15min | Downrank |
 
-带 low-priority marker 的 title 即使命中 query，也只拿较低 title score。`带原唱` 会改变下一次显式提交搜索使用的 family、source query 和正负权重，但切换本身不请求或清空当前结果；Result 保留 `score` 和 `reasons` 供 test/debug。
+带 low-priority marker 的 title 即使命中 query，也只拿较低 title score。`带原唱` 会改变下一次显式提交搜索使用的正负权重；歌名模式复用并合并同一 canonical song 的两个 intent family，歌手模式继续使用各自 family。切换本身不请求或清空当前结果；Result 保留 `score` 和 `reasons` 供 test/debug。
 
 关键 regression：搜索 `依赖` 时，`离开我的依赖` 的 KTV/lyrics/伴奏必须高于标题无关的 `唯一` KTV。
 
@@ -327,7 +327,7 @@ Keys：
 
 ```txt
 yt-search:v3:<familyHash>:CA:zh-Hans
-yt-search-index:v1:<normalizedQuery>:CA:zh-Hans
+yt-search-index:v2:<song-or-artist>:<karaoke-or-original>:<artist-scope>:<normalizedQuery>:CA:zh-Hans
 yt-search-recommendations:v1:CA:zh-Hans
 yt-search-quota:v1:<Pacific-date>
 ```
@@ -340,7 +340,7 @@ Family entry 保存：
 - Search/videos call counts、payload bytes、pruned count。
 - Hit count 和 last accessed time。
 
-读取先查 normalized index，再 fallback 到 family hash。Cache hit 会按当前 query 重新打分、增加 hit count，但不延长原 expiry。
+读取先查精确 family hash，再 fallback 到 type/vocal-intent/artist 隔离的 normalized index，并验证 entry scope。歌名 cache hit 会按固定顺序合并同一 canonical song 的 KTV/原唱 family、按当前 intent 重新打分并过滤无关 title；命中的 family 增加 hit count，但不延长原 expiry。
 
 写入先限制 50 条，再测 UTF-8 JSON bytes；超过 512 KiB 时从尾部裁剪。默认 TTL 365 天。Search cache 可重建，因此不写 D1。
 
@@ -349,9 +349,10 @@ Family entry 保存：
 - 每次成功写 family 时只把该搜索排名最高的前 8 条提升到 recommendation pool 顶部，其余尾部结果排在已有高质量候选之后；按 video id 去重并保留最多 200 条。
 - Cache hit 会重新提升该 family 的头部结果；真实 `ADD_QUEUE_ITEM` 会把被点歌曲置顶，因此近期搜索、近期点歌和历史高命中 family 都会形成可解释的推荐信号。
 - Recommendation key 不存在或不足时，会按“最近访问时间 + hit count”排列 family，再按名次轮转合并，而不是让单个最新 family 的随机尾部垄断列表。
-- Project guardrail：50 search calls/day、1 call/cold fill。
+- Project guardrail：100 `search.list` calls/day、1 call/cold fill；单次结果上限仍是 50。
 - Quota day 按 `America/Los_Angeles`，PT 午夜重置。
-- `GET /api/youtube/quota` 返回 remaining/reset；display 只显示简洁的本地相对倒计时（`本地重置还有 N 小时`），不暴露 GMT 或 IANA 时区文本。
+- `GET /api/youtube/quota` 返回 remaining/reset；cold search 写入后直接使用刚记录的 status，并通过 room WebSocket `YOUTUBE_QUOTA_UPDATED` 即时更新 display。60 秒 query poll 只作断线兜底。
+- Display 只显示简洁的本地相对倒计时（`本地重置还有 N 小时`），不暴露 GMT 或 IANA 时区文本。
 - Estimate 不替代 Google Cloud Console，失败/无效请求可能造成 drift。
 - 非空搜索默认同 room + IP identity 每分钟 20 次。
 - 超限：HTTP 429、`SEARCH_RATE_LIMITED`、`retry-after`。

@@ -12,6 +12,7 @@ import { createRoomId, isValidRoomId } from "./roomIds";
 import { getSearchRecommendations, getYouTubeDailySearchLimit, searchVideos } from "./searchService";
 import type { Env } from "./types";
 import type { SearchType } from "../src/types/youtube";
+import type { SearchResponse, YouTubeQuotaStatus } from "../src/types/youtube";
 import { getYouTubeSearchQuotaStatus } from "./youtubeQuota";
 
 const CREATE_ROOM_ATTEMPTS = 3;
@@ -254,22 +255,94 @@ async function searchRoomVideos(request: Request, env: Env, roomId: string) {
   }
 
   try {
-    return jsonResponse(
-      await searchVideos({
-        query,
-        artist: artist || undefined,
-        searchType,
-        includeOriginalVocal,
-        limit,
-        cacheFill,
-        env,
-      }),
-    );
+    const response = await searchVideos({
+      query,
+      artist: artist || undefined,
+      searchType,
+      includeOriginalVocal,
+      limit,
+      cacheFill,
+      env,
+    });
+    const quotaStatus = quotaStatusFromSearchResponse(response);
+
+    if (quotaStatus) {
+      await broadcastYouTubeQuotaStatus(env, roomId, quotaStatus);
+    }
+
+    return jsonResponse(response);
   } catch (error) {
     return apiError(
       502,
       "SEARCH_FAILED",
       error instanceof Error ? error.message : "Search failed.",
+    );
+  }
+}
+
+function quotaStatusFromSearchResponse(
+  response: SearchResponse,
+): YouTubeQuotaStatus | null {
+  const quota = response.cacheMeta?.quota;
+
+  if (
+    !quota ||
+    typeof quota.used !== "number" ||
+    typeof quota.resetAt !== "string" ||
+    quota.resetTimeZone !== "America/Los_Angeles" ||
+    typeof quota.updatedAt !== "string"
+  ) {
+    return null;
+  }
+
+  return {
+    dailyLimit: quota.dailyLimit,
+    used: quota.used,
+    remaining: quota.remainingAfter,
+    exhausted: quota.exhausted,
+    resetAt: quota.resetAt,
+    resetTimeZone: quota.resetTimeZone,
+    updatedAt: quota.updatedAt,
+  };
+}
+
+async function broadcastYouTubeQuotaStatus(
+  env: Env,
+  roomId: string,
+  status: YouTubeQuotaStatus,
+) {
+  if (!env.ROOM_OBJECT) {
+    return;
+  }
+
+  try {
+    const stub = env.ROOM_OBJECT.getByName(roomId);
+    const response = await stub.fetch(
+      new Request(`https://room-object.internal/rooms/${roomId}/youtube-quota`, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+        },
+        body: JSON.stringify(status),
+      }),
+    );
+
+    if (!response.ok) {
+      console.error(
+        JSON.stringify({
+          event: "youtube-quota-broadcast-failed",
+          roomId,
+          status: response.status,
+        }),
+      );
+    }
+  } catch (error) {
+    console.error(
+      JSON.stringify({
+        event: "youtube-quota-broadcast-failed",
+        roomId,
+        error: error instanceof Error ? error.message : "Unknown Durable Object error",
+      }),
     );
   }
 }

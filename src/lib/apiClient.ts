@@ -2,6 +2,8 @@ import type { ApiErrorResponse, CreateRoomResponse } from "../types/api";
 import type { RoomSnapshot } from "../types/room";
 import type { SearchResponse, SearchType, YouTubeQuotaStatus } from "../types/youtube";
 
+export const youtubeQuotaQueryKey = ["youtube-quota-status"] as const;
+
 export class ApiClientError extends Error {
   status: number;
   code: string;

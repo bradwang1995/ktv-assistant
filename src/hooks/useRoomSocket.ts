@@ -1,4 +1,6 @@
+import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { youtubeQuotaQueryKey } from "../lib/apiClient";
 import { hydrateRoomSnapshot } from "../lib/roomState";
 import type { RoomId } from "../types/room";
 import type {
@@ -41,6 +43,7 @@ export function useRoomSocket({
   role,
   enabled = true,
 }: UseRoomSocketOptions): RoomSocketState {
+  const queryClient = useQueryClient();
   const [status, setStatus] = useState<SocketStatus>("idle");
   const [lastError, setLastError] = useState<string | undefined>();
   const [reconnectAttempt, setReconnectAttempt] = useState(0);
@@ -117,6 +120,10 @@ export function useRoomSocket({
           hydrateRoomSnapshot(message.payload);
         }
 
+        if (message.type === "YOUTUBE_QUOTA_UPDATED") {
+          queryClient.setQueryData(youtubeQuotaQueryKey, message.payload);
+        }
+
         if (message.type === "ERROR") {
           setLastError(message.payload.message);
         }
@@ -175,7 +182,7 @@ export function useRoomSocket({
         socket.close(1000, "Page changed");
       }
     };
-  }, [clientId, enabled, role, roomId]);
+  }, [clientId, enabled, queryClient, role, roomId]);
 
   return {
     status,
@@ -226,7 +233,7 @@ function isLocalDevOrigin() {
   );
 }
 
-function parseServerMessage(data: unknown): ServerToClientMessage | null {
+export function parseServerMessage(data: unknown): ServerToClientMessage | null {
   if (typeof data !== "string") {
     return null;
   }
@@ -237,6 +244,7 @@ function parseServerMessage(data: unknown): ServerToClientMessage | null {
     if (
       parsed.type === "ROOM_SNAPSHOT" ||
       parsed.type === "ROOM_UPDATED" ||
+      parsed.type === "YOUTUBE_QUOTA_UPDATED" ||
       parsed.type === "ERROR" ||
       parsed.type === "PONG"
     ) {

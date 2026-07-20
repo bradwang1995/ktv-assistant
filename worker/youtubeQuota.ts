@@ -54,6 +54,14 @@ export async function getYouTubeSearchQuotaStatus(
         limit: dailyLimit,
         updatedAt: now.toISOString(),
       };
+  return buildQuotaStatus(state, dailyLimit, now);
+}
+
+function buildQuotaStatus(
+  state: YouTubeSearchQuotaState,
+  dailyLimit: number,
+  now: Date,
+): YouTubeSearchQuotaStatus {
   const used = Math.min(Math.max(Math.floor(state.used), 0), dailyLimit);
   const remaining = Math.max(dailyLimit - used, 0);
 
@@ -90,7 +98,7 @@ export async function recordYouTubeSearchCalls(
     expirationTtl: QUOTA_STATE_TTL_SECONDS,
   });
 
-  return nextState;
+  return buildQuotaStatus(nextState, dailyLimit, now);
 }
 
 async function readQuotaState(

@@ -45,7 +45,9 @@ class MemoryKv {
 describe("KV search cache", () => {
   it("builds stable v3 cache keys", () => {
     expect(searchCacheFamilyKey("abc123")).toBe("yt-search:v3:abc123:CA:zh-Hans");
-    expect(searchCacheIndexKey("later ktv")).toBe("yt-search-index:v1:later ktv:CA:zh-Hans");
+    expect(searchCacheIndexKey("later ktv")).toBe(
+      "yt-search-index:v2:song:karaoke:-:later ktv:CA:zh-Hans",
+    );
   });
 
   it("writes a family cache entry and reads it through an equivalent query", async () => {
@@ -66,6 +68,31 @@ describe("KV search cache", () => {
     expect(cached?.entry.queryFamily.includeOriginalVocal).toBe(false);
     expect(cached?.entry.results).toHaveLength(6);
     expect(kv.values.has(searchCacheFamilyKey(family.hash))).toBe(true);
+  });
+
+  it("keeps song, artist, karaoke, and original-vocal indexes isolated", async () => {
+    const kv = new MemoryKv();
+    const karaoke = buildSearchQueryFamily("Later");
+    const original = buildSearchQueryFamily("Later", undefined, {
+      includeOriginalVocal: true,
+    });
+    const artist = buildSearchQueryFamily("Later", undefined, {
+      searchType: "artist",
+    });
+
+    await writeSearchCache(kv, karaoke, buildResponse("Later", karaoke.normalizedQuery, buildResults(2)));
+    await writeSearchCache(kv, original, buildResponse("Later", original.normalizedQuery, buildResults(2, 10)));
+    await writeSearchCache(kv, artist, buildResponse("Later", artist.normalizedQuery, buildResults(2, 20)));
+
+    await expect(readSearchCache(kv, karaoke)).resolves.toMatchObject({
+      familyHash: karaoke.hash,
+    });
+    await expect(readSearchCache(kv, original)).resolves.toMatchObject({
+      familyHash: original.hash,
+    });
+    await expect(readSearchCache(kv, artist)).resolves.toMatchObject({
+      familyHash: artist.hash,
+    });
   });
 
   it("updates the default recommendation pool from written cache entries", async () => {

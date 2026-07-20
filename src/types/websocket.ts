@@ -1,4 +1,5 @@
 import type { ClientId, RoomSnapshot } from "./room";
+import type { YouTubeQuotaStatus } from "./youtube";
 
 export type ClientRole = "display" | "mobile";
 
@@ -71,6 +72,10 @@ export type ServerToClientMessage =
         code: string;
         message: string;
       };
+    }
+  | {
+      type: "YOUTUBE_QUOTA_UPDATED";
+      payload: YouTubeQuotaStatus;
     }
   | {
       type: "PONG";

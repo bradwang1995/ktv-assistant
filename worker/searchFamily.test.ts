@@ -8,15 +8,16 @@ describe("search query families", () => {
     expect(buildSearchQueryFamily("Later ktv").hash).toBe(buildSearchQueryFamily("Later").hash);
   });
 
-  it("builds broad source queries for YouTube search", () => {
+  it("starts song searches with a focused title query before broader fallbacks", () => {
     const family = buildSearchQueryFamily("Later", "Artist");
 
     expect(family.canonicalQuery).toBe("later");
     expect(family.normalizedQuery).toBe("later ktv");
     expect(family.aliases).toContain("later ktv");
     expect(family.aliases).toContain("later karaoke");
-    expect(family.sourceQueries[0]).toContain("later ktv|later karaoke");
-    expect(family.sourceQueries[0]).toContain("artist later ktv");
+    expect(family.sourceQueries[0]).toBe("artist later");
+    expect(family.sourceQueries).toContain("artist later ktv");
+    expect(family.sourceQueries.at(-1)).toContain("later ktv|later karaoke");
   });
 
   it("separates original-vocal searches from karaoke searches", () => {
@@ -27,7 +28,8 @@ describe("search query families", () => {
 
     expect(original.hash).not.toBe(karaoke.hash);
     expect(original.normalizedQuery).toBe("later lyric video");
-    expect(original.sourceQueries[0]).toContain("later lyric video");
+    expect(original.sourceQueries[0]).toBe("later");
+    expect(original.sourceQueries).toContain("later ktv");
   });
 
   it("builds artist-mode source queries", () => {

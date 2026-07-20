@@ -4,7 +4,7 @@ import type { SearchResponse } from "../src/types/youtube";
 import type { SearchQueryFamily } from "./searchFamily";
 
 const SEARCH_CACHE_VERSION = "v3";
-const SEARCH_CACHE_INDEX_VERSION = "v1";
+const SEARCH_CACHE_INDEX_VERSION = "v2";
 const SEARCH_RECOMMENDATIONS_VERSION = "v1";
 export const DEFAULT_SEARCH_CACHE_TTL_SECONDS = 60 * 60 * 24 * 365;
 export const DEFAULT_SEARCH_CACHE_MAX_ENTRY_BYTES = 512 * 1024;
@@ -12,7 +12,7 @@ export const MAX_CACHED_SEARCH_RESULTS = 50;
 export const MAX_RECOMMENDED_SEARCH_RESULTS = 200;
 export const MAX_PROMOTED_RESULTS_PER_SEARCH = 8;
 
-interface JsonKvNamespace {
+export interface SearchCacheNamespace {
   get<T>(key: string, options: { type: "json" }): Promise<T | null>;
   get(key: string): Promise<string | null>;
   put(key: string, value: string, options?: KVNamespacePutOptions): Promise<void>;
@@ -87,10 +87,19 @@ export function searchCacheFamilyKeyPrefix() {
 
 export function searchCacheIndexKey(
   normalizedQuery: string,
+  options: {
+    searchType?: SearchQueryFamily["searchType"];
+    includeOriginalVocal?: boolean;
+    artist?: string;
+  } = {},
   regionCode = "CA",
   language = "zh-Hans",
 ) {
-  return `yt-search-index:${SEARCH_CACHE_INDEX_VERSION}:${normalizedQuery}:${regionCode}:${language}`;
+  const searchType = options.searchType ?? "song";
+  const vocalIntent = options.includeOriginalVocal ? "original" : "karaoke";
+  const artist = encodeURIComponent(options.artist ?? "-");
+
+  return `yt-search-index:${SEARCH_CACHE_INDEX_VERSION}:${searchType}:${vocalIntent}:${artist}:${normalizedQuery}:${regionCode}:${language}`;
 }
 
 export function searchRecommendationsKey(regionCode = "CA", language = "zh-Hans") {
@@ -98,22 +107,24 @@ export function searchRecommendationsKey(regionCode = "CA", language = "zh-Hans"
 }
 
 export async function readSearchCache(
-  namespace: JsonKvNamespace | undefined,
+  namespace: SearchCacheNamespace | undefined,
   family: SearchQueryFamily,
 ): Promise<SearchCacheReadResult | null> {
   if (!namespace) {
     return null;
   }
 
-  const indexedHash = await namespace.get(searchCacheIndexKey(family.normalizedQuery));
-  const hashes = uniqueValues([indexedHash, family.hash].filter(isString));
+  const indexedHash = await namespace.get(
+    searchCacheIndexKey(family.normalizedQuery, family),
+  );
+  const hashes = uniqueValues([family.hash, indexedHash].filter(isString));
 
   for (const familyHash of hashes) {
     const entry = await namespace.get<SearchCacheEntry>(searchCacheFamilyKey(familyHash), {
       type: "json",
     });
 
-    if (isValidSearchCacheEntry(entry)) {
+    if (isValidSearchCacheEntry(entry) && isCompatibleSearchCacheEntry(entry, family)) {
       return { entry, familyHash };
     }
   }
@@ -122,7 +133,7 @@ export async function readSearchCache(
 }
 
 export async function writeSearchCache(
-  namespace: JsonKvNamespace | undefined,
+  namespace: SearchCacheNamespace | undefined,
   family: SearchQueryFamily,
   response: SearchResponse,
   options: {
@@ -161,7 +172,7 @@ export async function writeSearchCache(
 }
 
 export async function readSearchRecommendations(
-  namespace: JsonKvNamespace | undefined,
+  namespace: SearchCacheNamespace | undefined,
   limit: number,
 ) {
   if (!namespace) {
@@ -186,7 +197,7 @@ export async function readSearchRecommendations(
 }
 
 export async function touchSearchCache(
-  namespace: JsonKvNamespace | undefined,
+  namespace: SearchCacheNamespace | undefined,
   familyHash: string,
   entry: SearchCacheEntry,
 ) {
@@ -225,7 +236,7 @@ export async function touchSearchCache(
 }
 
 export async function recordQueuedSearchRecommendation(
-  namespace: JsonKvNamespace | undefined,
+  namespace: SearchCacheNamespace | undefined,
   item: QueueItemInput,
   ttlSeconds = DEFAULT_SEARCH_CACHE_TTL_SECONDS,
 ) {
@@ -350,7 +361,7 @@ function stringifyWithMeasuredBytes(entry: SearchCacheEntry, prunedResultCount: 
 }
 
 async function writeSearchCacheIndexes(
-  namespace: JsonKvNamespace,
+  namespace: SearchCacheNamespace,
   family: SearchQueryFamily,
   ttlSeconds: number,
 ) {
@@ -363,7 +374,7 @@ async function writeSearchCacheIndexes(
 
   await Promise.all(
     normalizedIndexQueries.map((normalizedQuery) =>
-      namespace.put(searchCacheIndexKey(normalizedQuery), family.hash, {
+      namespace.put(searchCacheIndexKey(normalizedQuery, family), family.hash, {
         expirationTtl: ttlSeconds,
       }),
     ),
@@ -371,7 +382,7 @@ async function writeSearchCacheIndexes(
 }
 
 async function updateSearchRecommendations(
-  namespace: JsonKvNamespace,
+  namespace: SearchCacheNamespace,
   nextResults: SearchResponse["results"],
   ttlSeconds: number,
 ) {
@@ -396,7 +407,7 @@ async function updateSearchRecommendations(
 }
 
 async function readRecommendationsFromFamilyCaches(
-  namespace: JsonKvNamespace,
+  namespace: SearchCacheNamespace,
   limit: number,
 ) {
   if (!namespace.list) {
@@ -449,6 +460,17 @@ function isValidSearchCacheEntry(value: SearchCacheEntry | null): value is Searc
   const expiresAtMs = Date.parse(value.expiresAt);
 
   return !Number.isFinite(expiresAtMs) || expiresAtMs > Date.now();
+}
+
+function isCompatibleSearchCacheEntry(
+  entry: SearchCacheEntry,
+  family: SearchQueryFamily,
+) {
+  return (
+    entry.queryFamily.searchType === family.searchType &&
+    entry.queryFamily.includeOriginalVocal === family.includeOriginalVocal &&
+    (entry.queryFamily.artist ?? "") === (family.artist ?? "")
+  );
 }
 
 function isValidRecommendationsEntry(

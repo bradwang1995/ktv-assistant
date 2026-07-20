@@ -55,4 +55,18 @@ describe("youtube quota tracking", () => {
       resetTimeZone: "America/Los_Angeles",
     });
   });
+
+  it("returns the just-recorded status without waiting for a KV read to converge", async () => {
+    const kv = new MemoryKv();
+    const now = new Date("2026-07-20T18:00:00.000Z");
+    const status = await recordYouTubeSearchCalls(kv, 1, 100, now);
+
+    expect(status).toMatchObject({
+      dailyLimit: 100,
+      used: 1,
+      remaining: 99,
+      exhausted: false,
+      updatedAt: now.toISOString(),
+    });
+  });
 });

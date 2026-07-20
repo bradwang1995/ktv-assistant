@@ -18,7 +18,7 @@ import {
   type PlayerStatus,
 } from "../components/FullscreenPlayer";
 import { useRoomSocket, type SocketStatus } from "../hooks/useRoomSocket";
-import { fetchYouTubeQuotaStatus } from "../lib/apiClient";
+import { fetchYouTubeQuotaStatus, youtubeQuotaQueryKey } from "../lib/apiClient";
 import { formatRelativeQuotaReset } from "../lib/quotaReset";
 import { getCurrentItem, getQueuedItems } from "../lib/roomReducer";
 import {
@@ -53,7 +53,7 @@ export default function DisplayPage() {
   const lastAutoPlayItemIdRef = useRef<string | null>(null);
   const handledLoadingPlaybackKeyRef = useRef<string | null>(null);
   const quotaQuery = useQuery({
-    queryKey: ["youtube-quota-status"],
+    queryKey: youtubeQuotaQueryKey,
     queryFn: fetchYouTubeQuotaStatus,
     staleTime: 60_000,
     refetchInterval: 60_000,

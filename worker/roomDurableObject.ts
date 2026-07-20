@@ -1,4 +1,5 @@
 import type { RoomSnapshot } from "../src/types/room";
+import type { YouTubeQuotaStatus } from "../src/types/youtube";
 import type { ClientRole } from "../src/types/websocket";
 import { cleanupCompletedItems } from "../src/lib/roomReducer";
 import {
@@ -104,6 +105,25 @@ export class RoomDurableObject {
 
       await this.touchRoomActivity(route.roomId);
       return this.handleWebSocket(request, route.roomId);
+    }
+
+    if (route?.name === "youtubeQuota") {
+      if (!isValidRoomId(route.roomId)) {
+        return apiError(400, "INVALID_ROOM_ID", "Room id must be 8 lowercase letters or numbers.");
+      }
+
+      if (request.method !== "POST") {
+        return apiError(405, "METHOD_NOT_ALLOWED", "Use POST to publish YouTube quota status.");
+      }
+
+      const status = await request.json().catch(() => null);
+
+      if (!isYouTubeQuotaStatus(status)) {
+        return apiError(400, "INVALID_QUOTA_STATUS", "YouTube quota status is invalid.");
+      }
+
+      this.broadcastYouTubeQuotaStatus(status);
+      return new Response(null, { status: 204 });
     }
 
     return new Response("Room Durable Object shell", { status: 200 });
@@ -328,6 +348,17 @@ export class RoomDurableObject {
     }
   }
 
+  private broadcastYouTubeQuotaStatus(status: YouTubeQuotaStatus) {
+    const message = encodeServerMessage({
+      type: "YOUTUBE_QUOTA_UPDATED",
+      payload: status,
+    });
+
+    for (const socket of this.sockets.keys()) {
+      socket.send(message);
+    }
+  }
+
   private sendError(socket: WebSocket, code: string, message: string) {
     socket.send(
       encodeServerMessage({
@@ -356,5 +387,30 @@ function matchRoomRoute(pathname: string) {
     return { name: "ws" as const, roomId: parts[1] };
   }
 
+  if (parts.length === 3 && parts[0] === "rooms" && parts[2] === "youtube-quota") {
+    return { name: "youtubeQuota" as const, roomId: parts[1] };
+  }
+
   return null;
+}
+
+function isYouTubeQuotaStatus(value: unknown): value is YouTubeQuotaStatus {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+
+  const status = value as Partial<YouTubeQuotaStatus>;
+
+  return (
+    typeof status.dailyLimit === "number" &&
+    Number.isFinite(status.dailyLimit) &&
+    typeof status.used === "number" &&
+    Number.isFinite(status.used) &&
+    typeof status.remaining === "number" &&
+    Number.isFinite(status.remaining) &&
+    typeof status.exhausted === "boolean" &&
+    typeof status.resetAt === "string" &&
+    status.resetTimeZone === "America/Los_Angeles" &&
+    typeof status.updatedAt === "string"
+  );
 }

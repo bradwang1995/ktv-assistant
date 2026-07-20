@@ -1,6 +1,6 @@
 # Project Progress
 
-Last updated: 2026-07-15
+Last updated: 2026-07-20
 
 这份文件记录 implementation status、历史修复、验证结果和剩余工作。系统设计、search details、手动配置、部署和测试步骤见根目录 `README.md`。
 
@@ -16,7 +16,7 @@ Last updated: 2026-07-15
 | Mobile preview | MVP complete | 2–4 列、单 iframe、固定 30 秒起点、600ms debounce、spinner/timeout fallback 已完成。 |
 | Display player | MVP complete | Autoplay、0 秒切歌、restart、pause/resume、seek、auto-advance 已完成；画质由 YouTube 自适应。 |
 | Reliability | MVP complete | Heartbeat、5-minute cleanup、debug、fallback policy 已完成。 |
-| Automated tests | 15 files / 56 tests | Route/DO integration 和 Playwright E2E 待补。 |
+| Automated tests | 17 files / 64 tests | Route/DO integration 和 Playwright E2E 待补。 |
 | Real-device QA | Pending | Safari、Android、iPad、Desktop Chrome 待正式验收。 |
 | Documentation | Complete | 只保留 root `README.md` + `PROGRESS.md`。 |
 
@@ -79,18 +79,18 @@ Last updated: 2026-07-15
 
 - `[x]` Worker-only API key、live provider、mock fallback。
 - `[x]` Song/artist 和 original-vocal intents。
-- `[x]` Deterministic aliases、OR source query、family hash。
+- `[x]` Deterministic aliases、歌名 focused source query、歌手 broad OR query、family hash。
 - `[x]` One `search.list` page、最多 50 embeddable candidates。
 - `[x]` Duration enrichment、dedupe、scoring。
-- `[x]` Title/artist/KTV/伴奏/lyrics/original ranking。
+- `[x]` Song title relevance filter；title/artist/KTV/伴奏/lyrics/original ranking。
 - `[x]` Partial-title regression coverage。
-- `[x]` KV v3 family cache、index、metadata、payload pruning。
+- `[x]` KV v3 family cache、v2 intent-scoped index、metadata、payload pruning。
 - `[x]` Recommendation pool 和 cached re-ranking。
 - `[x]` API 50 results；mobile 10-at-a-time expansion。
 - `[x]` Recommendation pool 200 results；缓存耗尽前自动无限滚动。
-- `[x]` Original-vocal toggle 自动重搜并使用对立权重，顺序有明确变化。
+- `[x]` 显式提交时原唱使用对立权重；歌名模式合并同曲 KTV/原唱历史 cache，顺序稳定且不重复消耗 search call。
 - `[x]` 20/min rate limit。
-- `[x]` Project quota 50/day、1/fill、Pacific reset 和 status API。
+- `[x]` Project quota 100/day、1/fill、Pacific reset、status API 和 room WebSocket 即时额度推送。
 - `[x]` Real YouTube result + repeat-query cache hit verified。
 
 ### Phase 5 — Mobile search and preview
@@ -260,6 +260,17 @@ Last updated: 2026-07-15
 | PIT5-14 | P0 | 只有 submit 才搜索；输入、歌名/歌手和原唱变化不清空、不重查、不改变当前数量，pending 期间保留旧结果直到成功替换。 |
 | PIT5-15 | P0 | Recommendation pool 只强提升每次搜索前 8 条，cache hit 重提 family 头部，真实点歌置顶；family fallback 按 recency/hits 排序后轮转，避免最近搜索的随机尾部垄断。 |
 
+### 2026-07-20 post-internal pass 6
+
+| ID | P | Completed |
+| --- | --- | --- |
+| PIT6-01 | P0 | 按 Google 2026-06 granular quota 文档核实：默认 `search.list` bucket 是 100 calls/day、每次 1 call；单次 `maxResults` 仍是 50。Main/Room guardrail 与默认值同步为 100。 |
+| PIT6-02 | P0 | 修复 v1 normalized index 跨 song/artist、KTV/原唱和 artist scope 覆盖 family hash；v2 index 隔离全部 intent，并始终优先读取、验证精确 family。 |
+| PIT6-03 | P0 | 歌名模式固定合并同一 canonical song 的 KTV/原唱历史 cache，去重后按当前 intent 重排；只要历史中有相关结果就不再发 live search。 |
+| PIT6-04 | P0 | Cold song search 第一条 source query 改为精确歌名；标题 miss 和 channel-only hit 不再进入歌名结果，旧 cache 若只剩无关项会回到 live fill 并覆盖当前 family。 |
+| PIT6-05 | P0 | Quota write 直接返回刚记录的 100-based status，不再立即回读最终一致 KV；Main Worker 经 room Durable Object 发布 `YOUTUBE_QUOTA_UPDATED`，Display React Query cache 立即更新，60 秒 poll 只作兜底。 |
+| PIT6-06 | P1 | 新增 cache intent isolation、同曲跨 intent reuse、song relevance、focused source query、quota write-through 和 WebSocket quota regressions；README/PROGRESS 同步。按用户要求 commit/push 但不立即 deploy。 |
+
 ## 4. Verification record
 
 ### Automated history
@@ -280,6 +291,7 @@ Last updated: 2026-07-15
 | 2026-07-15 pass 5 | Typecheck、15 files / 56 tests、production build、双 Worker dry-run、`git diff --check` passed。 |
 | 2026-07-15 pass 5 UI | Create 1280×720：CTA 240×72、持续 gradient、说明强制两行；Mobile 390×800：结果 `scrollTop 0→87`、`window.scrollY=0`，header/search/footer 坐标滚动前后完全一致。 |
 | 2026-07-15 pass 5 follow-up | Typecheck、15 files / 58 tests、production build、Wrangler 4.105 Room/Main 双 dry-run、`git diff --check` passed；新增 recommendation promotion/cache-hit/queued-song 和 neutral room-name regressions。Local Vite root HTTP 200；自动浏览器 transport 在连接时关闭，因此本记录不虚报新的截图/交互视觉通过。 |
+| 2026-07-20 pass 6 | Search/cache/quota/WebSocket focused 7 files / 32 tests、typecheck、full 17 files / 64 tests、production build 和 `git diff --check` passed。Wrangler 4.105 已确认；Room/Main dry-run 因安全审查认为可能认证并发送 bundle metadata 而未执行。按用户明确要求没有 production deploy，也没有虚报 runtime/browser smoke。 |
 
 ### Fourth-round design QA（2026-07-15）
 

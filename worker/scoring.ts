@@ -142,6 +142,12 @@ export function rankSearchResultsForQuery(
       result: scoreSearchResult(result, originalQuery, options),
       index,
     }))
+    .filter(
+      ({ result }) =>
+        options.searchType !== "song" ||
+        (!result.reasons.includes("title does not match query") &&
+          !result.reasons.includes("channel contains query")),
+    )
     .sort((a, b) => b.result.score - a.result.score || a.index - b.index)
     .map(({ result }) => result);
 }

@@ -51,7 +51,7 @@ describe("youtube search helpers", () => {
     expect(searchCalls).toHaveLength(1);
     expect(videosCalls).toHaveLength(1);
     expect(searchCalls[0].searchParams.get("maxResults")).toBe("50");
-    expect(searchCalls[0].searchParams.get("q")).toContain("later ktv|later karaoke");
+    expect(searchCalls[0].searchParams.get("q")).toBe("later");
     expect(searchCalls[0].searchParams.has("pageToken")).toBe(false);
   });
 
