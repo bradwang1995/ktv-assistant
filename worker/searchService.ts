@@ -18,7 +18,7 @@ import type { Env } from "./types";
 import { searchYouTubeVideos } from "./youtubeSearch";
 import {
   getYouTubeSearchQuotaStatusForEnv,
-  recordYouTubeSearchCallsForEnv,
+  reserveYouTubeSearchCallsForEnv,
 } from "./youtubeQuota";
 
 const DEFAULT_YOUTUBE_DAILY_SEARCH_LIMIT = 100;
@@ -354,6 +354,8 @@ async function searchLiveVideos({
   }
 
   const targetResultCount = cacheFill ? MAX_CACHED_SEARCH_RESULTS : limit;
+  let quotaAfter = quotaBefore;
+  let reservationRejectedWithCapacity = false;
   const response = await searchYouTubeVideos({
     query,
     artist,
@@ -362,10 +364,19 @@ async function searchLiveVideos({
     apiKey: env.YOUTUBE_API_KEY ?? "",
     maxSearchCalls,
     targetResultCount,
+    beforeSearchCall: async () => {
+      const reservation = await reserveYouTubeSearchCallsForEnv(env, 1, dailyLimit);
+      quotaAfter = reservation.status;
+      reservationRejectedWithCapacity = !reservation.reserved && reservation.status.remaining > 0;
+      return reservation.reserved;
+    },
   });
   const usedSearchCalls = response.cacheMeta?.sourceQueryCount ?? 0;
-  const quotaAfter =
-    (await recordYouTubeSearchCallsForEnv(env, usedSearchCalls, dailyLimit)) ?? quotaBefore;
+
+  if (usedSearchCalls === 0 && reservationRejectedWithCapacity) {
+    throw new Error("YouTube search quota ledger reservation failed.");
+  }
+
   const remainingAfter = quotaAfter.remaining;
 
   return {

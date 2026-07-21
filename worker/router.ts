@@ -25,9 +25,14 @@ import {
   listAdminRepositoryEntries,
   listAdminSearchEvents,
   normalizeAdminRange,
+  previewAdminRepositoryCleanup,
+  readConfiguredCleanupBatchSize,
+  readConfiguredCleanupTargetPercentage,
   readConfiguredCapacityBytes,
   readConfiguredWarningThresholdPercentage,
   recordSearchEvent,
+  RepositoryCleanupBusyError,
+  runAdminRepositoryCleanup,
 } from "./searchRepository";
 import type { Env } from "./types";
 import type { SearchType } from "../src/types/youtube";
@@ -55,7 +60,8 @@ export async function handleApiRequest(request: Request, env: Env) {
   if (
     route.name === "adminOverview" ||
     route.name === "adminSearches" ||
-    route.name === "adminRepository"
+    route.name === "adminRepository" ||
+    route.name === "adminRepositoryCleanup"
   ) {
     try {
       return await handleProtectedAdminRoute(request, env, route.name, url);
@@ -474,7 +480,11 @@ async function handleAdminSession(request: Request, env: Env) {
 async function handleProtectedAdminRoute(
   request: Request,
   env: Env,
-  routeName: "adminOverview" | "adminSearches" | "adminRepository",
+  routeName:
+    | "adminOverview"
+    | "adminSearches"
+    | "adminRepository"
+    | "adminRepositoryCleanup",
   url: URL,
 ) {
   if (!(await requireAdmin(request, env))) {
@@ -520,6 +530,44 @@ async function handleProtectedAdminRoute(
     );
   }
 
+  if (routeName === "adminRepositoryCleanup") {
+    const cleanupConfig = repositoryCleanupConfig(env);
+
+    if (request.method === "GET") {
+      return adminJsonResponse(await previewAdminRepositoryCleanup(env.DB, cleanupConfig));
+    }
+
+    if (request.method === "POST") {
+      if (!isSameOriginMutation(request)) {
+        return adminApiError(403, "ADMIN_ORIGIN_REJECTED", "清理请求来源无效。");
+      }
+
+      const body = await request.json().catch(() => null);
+
+      if (
+        typeof body !== "object" ||
+        body === null ||
+        !("confirm" in body) ||
+        (body as { confirm?: unknown }).confirm !== true
+      ) {
+        return adminApiError(400, "CLEANUP_CONFIRMATION_REQUIRED", "必须明确确认清理策略。");
+      }
+
+      try {
+        return adminJsonResponse(
+          await runAdminRepositoryCleanup(env.DB, cleanupConfig, env.SEARCH_CACHE),
+        );
+      } catch (error) {
+        if (error instanceof RepositoryCleanupBusyError) {
+          return adminApiError(409, error.code, error.message);
+        }
+        throw error;
+      }
+    }
+
+    return adminApiError(405, "METHOD_NOT_ALLOWED", "Use GET or POST for repository cleanup.");
+  }
+
   if (request.method === "GET") {
     const searchType = url.searchParams.get("searchType");
     const sort = url.searchParams.get("sort");
@@ -559,6 +607,19 @@ async function handleProtectedAdminRoute(
 
 function adminJsonResponse(body: unknown) {
   return jsonResponse(body, { headers: { "cache-control": "no-store" } });
+}
+
+function repositoryCleanupConfig(env: Env) {
+  return {
+    capacityBytes: readConfiguredCapacityBytes(env.SEARCH_REPOSITORY_CAPACITY_BYTES),
+    thresholdPercentage: readConfiguredWarningThresholdPercentage(
+      env.SEARCH_REPOSITORY_WARNING_THRESHOLD_PERCENT,
+    ),
+    targetPercentage: readConfiguredCleanupTargetPercentage(
+      env.SEARCH_REPOSITORY_CLEANUP_TARGET_PERCENT,
+    ),
+    batchSize: readConfiguredCleanupBatchSize(env.SEARCH_REPOSITORY_CLEANUP_BATCH_SIZE),
+  };
 }
 
 function adminApiError(status: number, code: string, message: string) {
@@ -667,6 +728,16 @@ function matchApiRoute(pathname: string) {
 
   if (parts.length === 3 && parts[0] === "api" && parts[1] === "admin" && parts[2] === "repository") {
     return { name: "adminRepository" as const };
+  }
+
+  if (
+    parts.length === 4 &&
+    parts[0] === "api" &&
+    parts[1] === "admin" &&
+    parts[2] === "repository" &&
+    parts[3] === "cleanup"
+  ) {
+    return { name: "adminRepositoryCleanup" as const };
   }
 
   return null;

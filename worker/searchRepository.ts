@@ -1,4 +1,8 @@
 import type {
+  AdminCleanupCandidate,
+  AdminCleanupHistoryItem,
+  AdminCleanupPreview,
+  AdminCleanupResult,
   AdminDeleteRepositoryResult,
   AdminOverview,
   AdminRange,
@@ -15,6 +19,10 @@ import type { SearchQueryFamily } from "./searchFamily";
 const DEFAULT_PAGE_SIZE = 20;
 const MAX_PAGE_SIZE = 50;
 const MAX_DELETE_COUNT = 50;
+const DEFAULT_CLEANUP_BATCH_SIZE = 25;
+const MAX_CLEANUP_BATCH_SIZE = 50;
+const CLEANUP_LOCK_NAME = "repository-storage-pressure";
+const CLEANUP_LOCK_SECONDS = 60;
 
 export async function readSearchRepository(
   db: D1Database | undefined,
@@ -480,6 +488,223 @@ export async function listAdminRepositoryEntries(
   };
 }
 
+interface RepositoryCleanupConfig {
+  capacityBytes: number | null;
+  thresholdPercentage: number | null;
+  targetPercentage: number | null;
+  batchSize?: number | null;
+}
+
+export class RepositoryCleanupBusyError extends Error {
+  readonly code = "REPOSITORY_CLEANUP_BUSY";
+
+  constructor() {
+    super("已有资料库清理任务正在运行，请稍后重试。");
+  }
+}
+
+export async function previewAdminRepositoryCleanup(
+  db: D1Database,
+  config: RepositoryCleanupConfig,
+): Promise<AdminCleanupPreview> {
+  const now = new Date().toISOString();
+  const [storage, recentRuns] = await Promise.all([
+    readRepositoryStorage(db),
+    readRecentCleanupRuns(db),
+  ]);
+  const batchSize = normalizeCleanupBatchSize(config.batchSize);
+  const base = {
+    capacityBytes: config.capacityBytes,
+    databaseBytes: storage.databaseBytes,
+    capacityPercentage: calculatePercentage(storage.databaseBytes, config.capacityBytes),
+    thresholdPercentage: config.thresholdPercentage,
+    targetPercentage: config.targetPercentage,
+    batchSize,
+    estimatedRepositoryBytes: storage.estimatedRepositoryBytes,
+    recentRuns,
+    updatedAt: now,
+  };
+
+  if (config.capacityBytes === null || storage.databaseBytes === null) {
+    return unavailableCleanupPreview(base, "capacity_unknown");
+  }
+
+  if (config.thresholdPercentage === null || config.targetPercentage === null) {
+    return unavailableCleanupPreview(base, "policy_incomplete");
+  }
+
+  if (config.targetPercentage >= config.thresholdPercentage) {
+    return unavailableCleanupPreview(base, "policy_invalid");
+  }
+
+  if ((base.capacityPercentage ?? 0) < config.thresholdPercentage) {
+    return unavailableCleanupPreview(base, "below_threshold", true);
+  }
+
+  if (storage.totalQueries === 0) {
+    return unavailableCleanupPreview(base, "repository_empty", true);
+  }
+
+  const candidateResult = await db
+    .prepare(
+      `SELECT id, original_query, search_type, access_count, approx_bytes,
+              created_at, last_accessed_at
+       FROM search_repository_entries
+       ORDER BY access_count ASC, last_accessed_at ASC, created_at ASC, id ASC
+       LIMIT ?1`,
+    )
+    .bind(batchSize)
+    .all<Record<string, unknown>>();
+  const bytesNeeded = Math.max(
+    storage.databaseBytes - config.capacityBytes * (config.targetPercentage / 100),
+    0,
+  );
+  const candidates: AdminCleanupCandidate[] = [];
+  let estimatedBytesToRemove = 0;
+
+  for (const row of candidateResult.results) {
+    const candidate = toCleanupCandidate(row);
+    candidates.push(candidate);
+    estimatedBytesToRemove += candidate.approxBytes;
+
+    if (estimatedBytesToRemove >= bytesNeeded) {
+      break;
+    }
+  }
+
+  return {
+    configured: true,
+    actionNeeded: candidates.length > 0,
+    unavailableReason: candidates.length > 0 ? null : "repository_empty",
+    ...base,
+    estimatedBytesToRemove,
+    candidates,
+    policy: cleanupPolicyDescription(
+      config.thresholdPercentage,
+      config.targetPercentage,
+      batchSize,
+    ),
+  };
+}
+
+export async function runAdminRepositoryCleanup(
+  db: D1Database,
+  config: RepositoryCleanupConfig,
+  cache?: KVNamespace,
+): Promise<AdminCleanupResult> {
+  const leaseId = crypto.randomUUID();
+  const runId = crypto.randomUUID();
+  const startedAt = new Date();
+
+  if (!(await acquireCleanupLock(db, leaseId, startedAt))) {
+    throw new RepositoryCleanupBusyError();
+  }
+
+  try {
+    const preview = await previewAdminRepositoryCleanup(db, config);
+
+    if (!preview.actionNeeded || preview.candidates.length === 0) {
+      const result = skippedCleanupResult(runId, preview);
+      await recordCleanupAudit(db, runId, [], "success", {
+        result: "skipped",
+        preview,
+        message: result.message,
+      });
+      return result;
+    }
+
+    const ids = preview.candidates.map((candidate) => candidate.id);
+    const placeholders = ids.map((_, index) => `?${index + 1}`).join(", ");
+    const session = db.withSession("first-primary");
+    const cacheRows = await session
+      .prepare(
+        `SELECT family_hash, normalized_query, normalized_artist, search_type,
+                include_original_vocal
+         FROM search_repository_entries
+         WHERE id IN (${placeholders})`,
+      )
+      .bind(...ids)
+      .all<Record<string, unknown>>();
+
+    const batchResults = await session.batch([
+      session
+        .prepare(`DELETE FROM search_repository_entries WHERE id IN (${placeholders})`)
+        .bind(...ids),
+      session
+        .prepare(
+          `INSERT INTO admin_audit_events (
+             id, action, target_type, target_ids_json, affected_count, outcome,
+             details_json, created_at
+           ) VALUES (?1, 'cleanup_repository', 'search_repository_entry', ?2, ?3, 'success', ?4, ?5)`,
+        )
+        .bind(
+          runId,
+          JSON.stringify(ids),
+          ids.length,
+          JSON.stringify({ result: "running", preview }),
+          startedAt.toISOString(),
+        ),
+    ]);
+    const deletedCount = Number(batchResults[0]?.meta.changes ?? ids.length);
+
+    await deleteRepositoryCacheRows(cache, cacheRows.results);
+    const estimatedBytesRemoved = preview.candidates.reduce(
+      (total, candidate) => total + candidate.approxBytes,
+      0,
+    );
+    const after = await readRepositoryStorageAfterCleanup(
+      db,
+      Math.max(preview.estimatedRepositoryBytes - estimatedBytesRemoved, 0),
+    );
+    const percentageAfter = calculatePercentage(after.databaseBytes, preview.capacityBytes);
+    const targetReached =
+      percentageAfter === null || preview.targetPercentage === null
+        ? null
+        : percentageAfter <= preview.targetPercentage;
+    const outcome = targetReached === true && deletedCount === ids.length ? "success" : "partial";
+    const result: AdminCleanupResult = {
+      runId,
+      outcome,
+      deletedCount,
+      deletedIds: ids,
+      estimatedBytesRemoved,
+      databaseBytesBefore: preview.databaseBytes,
+      databaseBytesAfter: after.databaseBytes,
+      capacityPercentageBefore: preview.capacityPercentage,
+      capacityPercentageAfter: percentageAfter,
+      targetPercentage: preview.targetPercentage,
+      targetReached,
+      message:
+        targetReached === true
+          ? `本批已删除 ${deletedCount} 条低复用资料，存储已达到目标范围。`
+          : `本批已删除 ${deletedCount} 条低复用资料；D1 容量统计可能延迟，必要时可再次预览。`,
+      updatedAt: new Date().toISOString(),
+    };
+
+    await updateCleanupAudit(db, runId, deletedCount, {
+      result: outcome,
+      preview,
+      after: {
+        databaseBytes: after.databaseBytes,
+        estimatedRepositoryBytes: after.estimatedRepositoryBytes,
+        capacityPercentage: percentageAfter,
+      },
+      estimatedBytesRemoved,
+      targetReached,
+      message: result.message,
+    });
+
+    return result;
+  } catch (error) {
+    if (!(error instanceof RepositoryCleanupBusyError)) {
+      await recordCleanupFailureAudit(db, runId, error, startedAt);
+    }
+    throw error;
+  } finally {
+    await releaseCleanupLock(db, leaseId);
+  }
+}
+
 export async function deleteAdminRepositoryEntries(
   db: D1Database,
   ids: string[],
@@ -524,27 +749,7 @@ export async function deleteAdminRepositoryEntries(
         ),
     ]);
 
-    if (cache) {
-      await Promise.allSettled(
-        cacheRows.results.flatMap((row) => {
-          const familyHash = rowString(row, "family_hash");
-          const normalizedQuery = rowString(row, "normalized_query");
-          const searchType = rowString(row, "search_type") === "artist" ? "artist" : "song";
-          const includeOriginalVocal = rowNumber(row, "include_original_vocal") === 1;
-          const artist = nullableRowString(row, "normalized_artist") ?? undefined;
-          return [
-            cache.delete(searchCacheFamilyKey(familyHash)),
-            cache.delete(
-              searchCacheIndexKey(normalizedQuery, {
-                searchType,
-                includeOriginalVocal,
-                artist,
-              }),
-            ),
-          ];
-        }),
-      );
-    }
+    await deleteRepositoryCacheRows(cache, cacheRows.results);
 
     return {
       requestedCount: uniqueIds.length,
@@ -584,6 +789,325 @@ async function recordFailedDeletionAudit(db: D1Database, ids: string[], error: u
   }
 }
 
+async function readRepositoryStorage(db: D1Database) {
+  const result = await db
+    .prepare(
+      `SELECT COUNT(*) AS total_queries,
+              COALESCE(SUM(approx_bytes), 0) AS estimated_repository_bytes
+       FROM search_repository_entries`,
+    )
+    .all<Record<string, unknown>>();
+  const row = result.results[0] ?? {};
+
+  return {
+    totalQueries: rowNumber(row, "total_queries"),
+    estimatedRepositoryBytes: rowNumber(row, "estimated_repository_bytes"),
+    databaseBytes: finiteNumber(result.meta.size_after),
+  };
+}
+
+async function readRepositoryStorageAfterCleanup(
+  db: D1Database,
+  estimatedRepositoryBytes: number,
+) {
+  try {
+    return await readRepositoryStorage(db);
+  } catch (error) {
+    console.error(
+      JSON.stringify({
+        event: "repository-cleanup-after-measurement-failed",
+        error: error instanceof Error ? error.message : "Unknown measurement error",
+      }),
+    );
+    return {
+      totalQueries: 0,
+      estimatedRepositoryBytes,
+      databaseBytes: null,
+    };
+  }
+}
+
+async function readRecentCleanupRuns(db: D1Database): Promise<AdminCleanupHistoryItem[]> {
+  const result = await db
+    .prepare(
+      `SELECT id, outcome, affected_count, details_json, created_at
+       FROM admin_audit_events
+       WHERE action = 'cleanup_repository'
+       ORDER BY created_at DESC, id DESC
+       LIMIT 5`,
+    )
+    .all<Record<string, unknown>>();
+
+  return result.results.map((row) => {
+    const details = parseJsonRecord(nullableRowString(row, "details_json"));
+    const value = details?.result;
+    const resultValue =
+      value === "success" || value === "partial" || value === "skipped"
+        ? value
+        : "failure";
+    return {
+      id: rowString(row, "id"),
+      outcome: rowString(row, "outcome") === "success" ? "success" : "failure",
+      result: resultValue,
+      affectedCount: rowNumber(row, "affected_count"),
+      message: typeof details?.message === "string" ? details.message : null,
+      createdAt: rowString(row, "created_at"),
+    };
+  });
+}
+
+function unavailableCleanupPreview(
+  base: Pick<
+    AdminCleanupPreview,
+    | "capacityBytes"
+    | "databaseBytes"
+    | "capacityPercentage"
+    | "thresholdPercentage"
+    | "targetPercentage"
+    | "batchSize"
+    | "estimatedRepositoryBytes"
+    | "recentRuns"
+    | "updatedAt"
+  >,
+  unavailableReason: NonNullable<AdminCleanupPreview["unavailableReason"]>,
+  configured = false,
+): AdminCleanupPreview {
+  return {
+    configured,
+    actionNeeded: false,
+    unavailableReason,
+    ...base,
+    estimatedBytesToRemove: 0,
+    candidates: [],
+    policy:
+      base.thresholdPercentage !== null && base.targetPercentage !== null
+        ? cleanupPolicyDescription(
+            base.thresholdPercentage,
+            base.targetPercentage,
+            base.batchSize,
+          )
+        : "容量、预警线与清理目标必须通过部署配置明确提供；系统不会自行猜测。",
+  };
+}
+
+function toCleanupCandidate(row: Record<string, unknown>): AdminCleanupCandidate {
+  return {
+    id: rowString(row, "id"),
+    query: rowString(row, "original_query"),
+    searchType: rowString(row, "search_type") === "artist" ? "artist" : "song",
+    accessCount: rowNumber(row, "access_count"),
+    approxBytes: rowNumber(row, "approx_bytes"),
+    createdAt: rowString(row, "created_at"),
+    lastAccessedAt: rowString(row, "last_accessed_at"),
+  };
+}
+
+function skippedCleanupResult(
+  runId: string,
+  preview: AdminCleanupPreview,
+): AdminCleanupResult {
+  const messages: Record<NonNullable<AdminCleanupPreview["unavailableReason"]>, string> = {
+    capacity_unknown: "数据库容量未知，未执行清理。",
+    policy_incomplete: "清理策略配置不完整，未执行清理。",
+    policy_invalid: "清理目标必须低于预警线，未执行清理。",
+    below_threshold: "当前存储尚未达到预警线，无需清理。",
+    repository_empty: "持久资料库为空，无需清理。",
+  };
+
+  return {
+    runId,
+    outcome: "skipped",
+    deletedCount: 0,
+    deletedIds: [],
+    estimatedBytesRemoved: 0,
+    databaseBytesBefore: preview.databaseBytes,
+    databaseBytesAfter: preview.databaseBytes,
+    capacityPercentageBefore: preview.capacityPercentage,
+    capacityPercentageAfter: preview.capacityPercentage,
+    targetPercentage: preview.targetPercentage,
+    targetReached: null,
+    message:
+      messages[preview.unavailableReason ?? "repository_empty"],
+    updatedAt: new Date().toISOString(),
+  };
+}
+
+function cleanupPolicyDescription(
+  thresholdPercentage: number,
+  targetPercentage: number,
+  batchSize: number,
+) {
+  return `达到 ${thresholdPercentage}% 后，按复用次数、最近使用、创建时间依次从低到高选择；每批最多 ${batchSize} 条，目标降至 ${targetPercentage}% 以下。`;
+}
+
+function calculatePercentage(value: number | null, capacity: number | null) {
+  return value === null || capacity === null
+    ? null
+    : Math.min((value / capacity) * 100, 100);
+}
+
+function normalizeCleanupBatchSize(value: number | null | undefined) {
+  return Math.min(
+    positiveInteger(value ?? undefined, DEFAULT_CLEANUP_BATCH_SIZE),
+    MAX_CLEANUP_BATCH_SIZE,
+  );
+}
+
+async function acquireCleanupLock(db: D1Database, leaseId: string, now: Date) {
+  const expiresAt = new Date(now.getTime() + CLEANUP_LOCK_SECONDS * 1000).toISOString();
+  const result = await db
+    .prepare(
+      `INSERT INTO repository_cleanup_locks (
+         lock_name, lease_id, expires_at, updated_at
+       ) VALUES (?1, ?2, ?3, ?4)
+       ON CONFLICT(lock_name)
+       DO UPDATE SET
+         lease_id = excluded.lease_id,
+         expires_at = excluded.expires_at,
+         updated_at = excluded.updated_at
+       WHERE repository_cleanup_locks.expires_at <= ?4`,
+    )
+    .bind(CLEANUP_LOCK_NAME, leaseId, expiresAt, now.toISOString())
+    .run();
+
+  return Number(result.meta.changes ?? 0) === 1;
+}
+
+async function releaseCleanupLock(db: D1Database, leaseId: string) {
+  try {
+    await db
+      .prepare(
+        `DELETE FROM repository_cleanup_locks
+         WHERE lock_name = ?1 AND lease_id = ?2`,
+      )
+      .bind(CLEANUP_LOCK_NAME, leaseId)
+      .run();
+  } catch (error) {
+    console.error(
+      JSON.stringify({
+        event: "repository-cleanup-lock-release-failed",
+        error: error instanceof Error ? error.message : "Unknown lock release error",
+      }),
+    );
+  }
+}
+
+async function deleteRepositoryCacheRows(
+  cache: KVNamespace | undefined,
+  rows: Record<string, unknown>[],
+) {
+  if (!cache) {
+    return;
+  }
+
+  await Promise.allSettled(
+    rows.flatMap((row) => {
+      const familyHash = rowString(row, "family_hash");
+      const normalizedQuery = rowString(row, "normalized_query");
+      const searchType = rowString(row, "search_type") === "artist" ? "artist" : "song";
+      const includeOriginalVocal = rowNumber(row, "include_original_vocal") === 1;
+      const artist = nullableRowString(row, "normalized_artist") ?? undefined;
+      return [
+        cache.delete(searchCacheFamilyKey(familyHash)),
+        cache.delete(
+          searchCacheIndexKey(normalizedQuery, {
+            searchType,
+            includeOriginalVocal,
+            artist,
+          }),
+        ),
+      ];
+    }),
+  );
+}
+
+async function recordCleanupAudit(
+  db: D1Database,
+  runId: string,
+  ids: string[],
+  outcome: "success" | "failure",
+  details: unknown,
+) {
+  await db
+    .prepare(
+      `INSERT INTO admin_audit_events (
+         id, action, target_type, target_ids_json, affected_count, outcome,
+         details_json, created_at
+       ) VALUES (?1, 'cleanup_repository', 'search_repository_entry', ?2, ?3, ?4, ?5, ?6)`,
+    )
+    .bind(
+      runId,
+      JSON.stringify(ids),
+      ids.length,
+      outcome,
+      JSON.stringify(details),
+      new Date().toISOString(),
+    )
+    .run();
+}
+
+async function updateCleanupAudit(
+  db: D1Database,
+  runId: string,
+  affectedCount: number,
+  details: unknown,
+) {
+  try {
+    await db
+      .prepare(
+        `UPDATE admin_audit_events
+         SET affected_count = ?1, details_json = ?2
+         WHERE id = ?3`,
+      )
+      .bind(affectedCount, JSON.stringify(details), runId)
+      .run();
+  } catch (error) {
+    console.error(
+      JSON.stringify({
+        event: "repository-cleanup-audit-update-failed",
+        runId,
+        error: error instanceof Error ? error.message : "Unknown audit update error",
+      }),
+    );
+  }
+}
+
+async function recordCleanupFailureAudit(
+  db: D1Database,
+  runId: string,
+  error: unknown,
+  startedAt: Date,
+) {
+  try {
+    await db
+      .prepare(
+        `INSERT INTO admin_audit_events (
+           id, action, target_type, target_ids_json, affected_count, outcome,
+           details_json, created_at
+         ) VALUES (?1, 'cleanup_repository', 'search_repository_entry', '[]', 0, 'failure', ?2, ?3)
+         ON CONFLICT(id)
+         DO UPDATE SET outcome = 'failure', details_json = excluded.details_json`,
+      )
+      .bind(
+        runId,
+        JSON.stringify({
+          result: "failure",
+          error: error instanceof Error ? error.message.slice(0, 300) : "Unknown error",
+        }),
+        startedAt.toISOString(),
+      )
+      .run();
+  } catch (auditError) {
+    console.error(
+      JSON.stringify({
+        event: "repository-cleanup-failure-audit-failed",
+        runId,
+        error: auditError instanceof Error ? auditError.message : "Unknown audit error",
+      }),
+    );
+  }
+}
+
 export function normalizeAdminRange(value: string | null): AdminRange {
   return value === "7d" || value === "30d" ? value : "24h";
 }
@@ -596,6 +1120,17 @@ export function readConfiguredCapacityBytes(value: string | undefined) {
 export function readConfiguredWarningThresholdPercentage(value: string | undefined) {
   const threshold = Number(value);
   return Number.isFinite(threshold) && threshold > 0 && threshold < 100 ? threshold : null;
+}
+
+export function readConfiguredCleanupTargetPercentage(value: string | undefined) {
+  return readConfiguredWarningThresholdPercentage(value);
+}
+
+export function readConfiguredCleanupBatchSize(value: string | undefined) {
+  const batchSize = Number(value);
+  return Number.isFinite(batchSize) && batchSize > 0
+    ? Math.min(Math.floor(batchSize), MAX_CLEANUP_BATCH_SIZE)
+    : DEFAULT_CLEANUP_BATCH_SIZE;
 }
 
 export function isValidDeleteIds(value: unknown): value is string[] {
@@ -612,6 +1147,21 @@ function parseStoredResponse(value: string): SearchResponse | null {
     const response = JSON.parse(value) as Partial<SearchResponse>;
     return typeof response.query === "string" && Array.isArray(response.results)
       ? (response as SearchResponse)
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+function parseJsonRecord(value: string | null): Record<string, unknown> | null {
+  if (!value) {
+    return null;
+  }
+
+  try {
+    const parsed = JSON.parse(value) as unknown;
+    return typeof parsed === "object" && parsed !== null
+      ? (parsed as Record<string, unknown>)
       : null;
   } catch {
     return null;

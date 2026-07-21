@@ -46,6 +46,7 @@ export interface YouTubeSearchOptions {
   apiKey: string;
   maxSearchCalls?: number;
   targetResultCount?: number;
+  beforeSearchCall?: () => Promise<boolean>;
 }
 
 export async function searchYouTubeVideos({
@@ -56,6 +57,7 @@ export async function searchYouTubeVideos({
   apiKey,
   maxSearchCalls = DEFAULT_MAX_SEARCH_CALLS,
   targetResultCount = DEFAULT_TARGET_CACHE_RESULTS,
+  beforeSearchCall,
 }: YouTubeSearchOptions): Promise<SearchResponse> {
   const family = buildSearchQueryFamily(query, artist, { searchType, includeOriginalVocal });
   const dedupedResults = new Map<string, Omit<VideoSearchResult, "score" | "reasons">>();
@@ -64,18 +66,22 @@ export async function searchYouTubeVideos({
   const sourceQuery = family.sourceQueries[0];
 
   if (sourceQuery && maxSearchCalls > 0 && targetResultCount > 0) {
-    const searchBody = await fetchSearchPage({
-      apiKey,
-      sourceQuery,
-    });
-    searchCallCount = 1;
-    usedSourceQueries.push(sourceQuery);
+    const allowed = beforeSearchCall ? await beforeSearchCall() : true;
 
-    for (const item of searchBody.items ?? []) {
-      const result = toBaseResult(item);
+    if (allowed) {
+      const searchBody = await fetchSearchPage({
+        apiKey,
+        sourceQuery,
+      });
+      searchCallCount = 1;
+      usedSourceQueries.push(sourceQuery);
 
-      if (result && !dedupedResults.has(result.videoId)) {
-        dedupedResults.set(result.videoId, result);
+      for (const item of searchBody.items ?? []) {
+        const result = toBaseResult(item);
+
+        if (result && !dedupedResults.has(result.videoId)) {
+          dedupedResults.set(result.videoId, result);
+        }
       }
     }
   }

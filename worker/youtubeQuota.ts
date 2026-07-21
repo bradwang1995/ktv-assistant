@@ -24,6 +24,11 @@ export interface YouTubeSearchQuotaStatus {
   updatedAt: string;
 }
 
+export interface YouTubeSearchQuotaReservation {
+  reserved: boolean;
+  status: YouTubeSearchQuotaStatus;
+}
+
 export function youtubeSearchQuotaKey(date = formatPacificDate(new Date())) {
   return `yt-search-quota:${YOUTUBE_SEARCH_QUOTA_VERSION}:${date}`;
 }
@@ -152,6 +157,37 @@ export async function recordYouTubeSearchCallsForEnv(
   );
 }
 
+export async function reserveYouTubeSearchCallsForEnv(
+  env: { DB?: D1Database; SEARCH_CACHE?: JsonKvNamespace },
+  count: number,
+  dailyLimit: number,
+  now = new Date(),
+): Promise<YouTubeSearchQuotaReservation> {
+  const normalizedCount = Math.max(Math.floor(count), 0);
+
+  if (normalizedCount <= 0) {
+    return {
+      reserved: true,
+      status: await getYouTubeSearchQuotaStatusForEnv(env, dailyLimit, now),
+    };
+  }
+
+  if (env.DB) {
+    try {
+      return await reserveD1QuotaState(env.DB, normalizedCount, dailyLimit, now);
+    } catch (error) {
+      console.error(
+        JSON.stringify({
+          event: "youtube-quota-d1-reservation-failed",
+          error: error instanceof Error ? error.message : "Unknown D1 error",
+        }),
+      );
+    }
+  }
+
+  return reserveKvQuotaState(env.SEARCH_CACHE, normalizedCount, dailyLimit, now);
+}
+
 async function readD1QuotaState(
   db: D1Database,
   dailyLimit: number,
@@ -237,6 +273,92 @@ async function recordD1QuotaState(
     dailyLimit,
     now,
   );
+}
+
+async function reserveD1QuotaState(
+  db: D1Database,
+  count: number,
+  dailyLimit: number,
+  now: Date,
+): Promise<YouTubeSearchQuotaReservation> {
+  const date = formatPacificDate(now);
+  const updatedAt = now.toISOString();
+  const session = db.withSession("first-primary");
+  const write = await session
+    .prepare(
+      `INSERT INTO youtube_quota_daily (
+         quota_date, used_search_calls, daily_limit, updated_at
+       ) SELECT ?1, ?2, ?3, ?4
+       WHERE ?2 <= ?3
+       ON CONFLICT(quota_date)
+       DO UPDATE SET
+         used_search_calls = youtube_quota_daily.used_search_calls + excluded.used_search_calls,
+         daily_limit = excluded.daily_limit,
+         updated_at = excluded.updated_at
+       WHERE youtube_quota_daily.used_search_calls + excluded.used_search_calls <= excluded.daily_limit`,
+    )
+    .bind(date, count, dailyLimit, updatedAt)
+    .run();
+  const state = await session
+    .prepare(
+      `SELECT used_search_calls, updated_at
+       FROM youtube_quota_daily
+       WHERE quota_date = ?1
+       LIMIT 1`,
+    )
+    .bind(date)
+    .first<{ used_search_calls: number; updated_at: string }>();
+  const status = buildQuotaStatus(
+    {
+      date,
+      used: state?.used_search_calls ?? 0,
+      limit: dailyLimit,
+      updatedAt: state?.updated_at ?? updatedAt,
+    },
+    dailyLimit,
+    now,
+  );
+
+  return {
+    reserved: Number(write.meta.changes ?? 0) === 1,
+    status,
+  };
+}
+
+async function reserveKvQuotaState(
+  namespace: JsonKvNamespace | undefined,
+  count: number,
+  dailyLimit: number,
+  now: Date,
+): Promise<YouTubeSearchQuotaReservation> {
+  if (!namespace) {
+    const status = await getYouTubeSearchQuotaStatus(namespace, dailyLimit, now);
+    return { reserved: false, status };
+  }
+
+  const state = await readQuotaState(namespace, dailyLimit, now);
+
+  if (state.used + count > dailyLimit) {
+    return {
+      reserved: false,
+      status: buildQuotaStatus(state, dailyLimit, now),
+    };
+  }
+
+  const nextState: YouTubeSearchQuotaState = {
+    date: state.date,
+    used: state.used + count,
+    limit: dailyLimit,
+    updatedAt: now.toISOString(),
+  };
+  await namespace.put(youtubeSearchQuotaKey(nextState.date), JSON.stringify(nextState), {
+    expirationTtl: QUOTA_STATE_TTL_SECONDS,
+  });
+
+  return {
+    reserved: true,
+    status: buildQuotaStatus(nextState, dailyLimit, now),
+  };
 }
 
 async function readQuotaState(

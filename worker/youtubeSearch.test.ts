@@ -64,6 +64,45 @@ describe("youtube search helpers", () => {
   it("returns undefined for unsupported durations", () => {
     expect(parseIso8601DurationSeconds("P1D")).toBeUndefined();
   });
+
+  it("does not dispatch an external request when the quota reservation is rejected", async () => {
+    const fetchMock = vi.fn();
+    const beforeSearchCall = vi.fn(async () => false);
+    vi.stubGlobal("fetch", fetchMock);
+
+    const response = await searchYouTubeVideos({
+      query: "青花瓷",
+      apiKey: "test-key",
+      beforeSearchCall,
+    });
+
+    expect(beforeSearchCall).toHaveBeenCalledTimes(1);
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(response.cacheMeta?.sourceQueryCount).toBe(0);
+    expect(response.results).toEqual([]);
+  });
+
+  it("reserves quota before a provider failure that may already have consumed it", async () => {
+    const callOrder: string[] = [];
+    const beforeSearchCall = vi.fn(async () => {
+      callOrder.push("reserve");
+      return true;
+    });
+    const fetchMock = vi.fn(async () => {
+      callOrder.push("fetch");
+      return new Response("failure", { status: 503 });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(
+      searchYouTubeVideos({
+        query: "青花瓷",
+        apiKey: "test-key",
+        beforeSearchCall,
+      }),
+    ).rejects.toThrow("YouTube search failed with status 503");
+    expect(callOrder).toEqual(["reserve", "fetch"]);
+  });
 });
 
 function buildSearchItems(start: number, count: number) {

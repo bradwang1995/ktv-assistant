@@ -39,15 +39,15 @@ export interface AdminOverview {
     estimatedRepositoryBytes: number;
     databaseBytes: number | null;
     capacityBytes: number | null;
-      capacityPercentage: number | null;
-      capacitySource: "configured" | "unknown";
-      warningThresholdPercentage: number | null;
-      storagePressure: boolean | null;
-      songQueries: number;
-      artistQueries: number;
-      uniqueSongs: number;
-      uniqueArtists: number;
-    };
+    capacityPercentage: number | null;
+    capacitySource: "configured" | "unknown";
+    warningThresholdPercentage: number | null;
+    storagePressure: boolean | null;
+    songQueries: number;
+    artistQueries: number;
+    uniqueSongs: number;
+    uniqueArtists: number;
+  };
   searches: {
     total: number;
     repositoryHits: number;
@@ -118,5 +118,65 @@ export interface AdminDeleteRepositoryResult {
   requestedCount: number;
   deletedCount: number;
   deletedIds: string[];
+  updatedAt: string;
+}
+
+export type AdminCleanupUnavailableReason =
+  | "capacity_unknown"
+  | "policy_incomplete"
+  | "policy_invalid"
+  | "below_threshold"
+  | "repository_empty";
+
+export interface AdminCleanupCandidate {
+  id: string;
+  query: string;
+  searchType: SearchType;
+  accessCount: number;
+  approxBytes: number;
+  createdAt: string;
+  lastAccessedAt: string;
+}
+
+export interface AdminCleanupHistoryItem {
+  id: string;
+  outcome: "success" | "failure";
+  result: "success" | "partial" | "skipped" | "failure";
+  affectedCount: number;
+  message: string | null;
+  createdAt: string;
+}
+
+export interface AdminCleanupPreview {
+  configured: boolean;
+  actionNeeded: boolean;
+  unavailableReason: AdminCleanupUnavailableReason | null;
+  capacityBytes: number | null;
+  databaseBytes: number | null;
+  capacityPercentage: number | null;
+  thresholdPercentage: number | null;
+  targetPercentage: number | null;
+  batchSize: number;
+  estimatedRepositoryBytes: number;
+  estimatedBytesToRemove: number;
+  candidates: AdminCleanupCandidate[];
+  recentRuns: AdminCleanupHistoryItem[];
+  policy: string;
+  updatedAt: string;
+}
+
+export interface AdminCleanupResult {
+  runId: string;
+  outcome: "success" | "partial" | "skipped";
+  deletedCount: number;
+  deletedIds: string[];
+  estimatedBytesRemoved: number;
+  databaseBytesBefore: number | null;
+  databaseBytesAfter: number | null;
+  capacityPercentageBefore: number | null;
+  capacityPercentageAfter: number | null;
+  targetPercentage: number | null;
+  targetReached: boolean | null;
+  message: string;
   updatedAt: string;
 }

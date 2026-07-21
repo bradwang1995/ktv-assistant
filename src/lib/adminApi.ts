@@ -1,4 +1,6 @@
 import type {
+  AdminCleanupPreview,
+  AdminCleanupResult,
   AdminDeleteRepositoryResult,
   AdminOverview,
   AdminRange,
@@ -71,6 +73,18 @@ export async function deleteAdminRepository(ids: string[]) {
     method: "DELETE",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ ids }),
+  });
+}
+
+export async function fetchAdminCleanupPreview() {
+  return adminRequest<AdminCleanupPreview>("/api/admin/repository/cleanup");
+}
+
+export async function runAdminCleanup() {
+  return adminRequest<AdminCleanupResult>("/api/admin/repository/cleanup", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ confirm: true }),
   });
 }
 

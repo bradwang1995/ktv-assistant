@@ -33,15 +33,18 @@ import { ConfirmDialog } from "../components/ConfirmDialog";
 import {
   adminSessionQueryKey,
   deleteAdminRepository,
+  fetchAdminCleanupPreview,
   fetchAdminOverview,
   fetchAdminRepository,
   fetchAdminSearches,
   fetchAdminSession,
   loginAdmin,
   logoutAdmin,
+  runAdminCleanup,
 } from "../lib/adminApi";
 import { ApiClientError } from "../lib/apiClient";
 import type {
+  AdminCleanupPreview,
   AdminOverview,
   AdminRange,
   AdminRepositoryItem,
@@ -182,7 +185,11 @@ function AdminShell() {
     queryClient.invalidateQueries({
       predicate: (query) => {
         const key = String(query.queryKey[0]);
-        return key === "admin-overview" || key === "admin-searches" || key === "admin-repository";
+        return (
+          key === "admin-overview" ||
+          key === "admin-searches" ||
+          key.startsWith("admin-repository")
+        );
       },
     });
 
@@ -279,11 +286,11 @@ function OverviewPage() {
   });
 
   if (overviewQuery.isPending) return <SectionLoader label="正在读取管理数据…" />;
-  if (overviewQuery.isError) {
+  if (overviewQuery.isError && !overviewQuery.data) {
     return <ErrorPanel error={overviewQuery.error} onRetry={() => overviewQuery.refetch()} />;
   }
 
-  const data = overviewQuery.data;
+  const data = overviewQuery.data!;
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-start justify-between gap-4">
@@ -304,7 +311,11 @@ function OverviewPage() {
         </div>
         <div className="text-right">
           <RangeTabs value={range} onChange={setRange} />
-          <p className="mt-2 text-xs text-slate-500">更新于 {formatDateTime(data.updatedAt)}</p>
+          <DataFreshness
+            updatedAt={data.updatedAt}
+            fetching={overviewQuery.isFetching}
+            error={overviewQuery.isError ? overviewQuery.error : null}
+          />
         </div>
       </div>
 
@@ -599,12 +610,20 @@ function SearchRecordsPage() {
         <RangeTabs value={range} onChange={(value) => { setRange(value); setPage(1); }} />
       </div>
 
+      {recordsQuery.data ? (
+        <DataFreshness
+          updatedAt={recordsQuery.data.updatedAt}
+          fetching={recordsQuery.isFetching}
+          error={recordsQuery.isError ? recordsQuery.error : null}
+        />
+      ) : null}
+
       <Panel className="overflow-hidden p-0">
         {recordsQuery.isPending ? (
           <SectionLoader label="正在读取搜索记录…" />
-        ) : recordsQuery.isError ? (
+        ) : recordsQuery.isError && !recordsQuery.data ? (
           <ErrorPanel error={recordsQuery.error} onRetry={() => recordsQuery.refetch()} />
-        ) : recordsQuery.data.items.length === 0 ? (
+        ) : recordsQuery.data!.items.length === 0 ? (
           <EmptyState icon={<Search />} text="没有符合条件的搜索记录" />
         ) : (
           <div className="overflow-x-auto">
@@ -615,7 +634,7 @@ function SearchRecordsPage() {
                 </tr>
               </thead>
               <tbody>
-                {recordsQuery.data.items.map((item) => (
+                {recordsQuery.data!.items.map((item) => (
                   <tr key={item.id}>
                     <td className="whitespace-nowrap text-slate-500">{formatDateTime(item.createdAt)}</td>
                     <td>
@@ -648,6 +667,7 @@ function RepositoryPage() {
   const [sort, setSort] = useState<"recent" | "reuse" | "results" | "size">("recent");
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [confirmCleanup, setConfirmCleanup] = useState(false);
   const repositoryQuery = useQuery({
     queryKey: ["admin-repository", page, query, searchType, sort],
     queryFn: () => fetchAdminRepository({ page, query: query || undefined, searchType: searchType || undefined, sort }),
@@ -662,6 +682,24 @@ function RepositoryPage() {
         queryClient.invalidateQueries({ queryKey: ["admin-repository"] }),
         queryClient.invalidateQueries({ queryKey: ["admin-overview"] }),
       ]);
+    },
+  });
+  const cleanupPreviewQuery = useQuery({
+    queryKey: ["admin-repository-cleanup-preview"],
+    queryFn: fetchAdminCleanupPreview,
+    enabled: false,
+    retry: false,
+  });
+  const cleanupMutation = useMutation({
+    mutationFn: runAdminCleanup,
+    onSuccess: async () => {
+      setConfirmCleanup(false);
+      setSelected(new Set());
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["admin-repository"] }),
+        queryClient.invalidateQueries({ queryKey: ["admin-overview"] }),
+      ]);
+      await cleanupPreviewQuery.refetch();
     },
   });
 
@@ -706,10 +744,27 @@ function RepositoryPage() {
       </div>
 
       {deleteMutation.isError ? <p className="text-sm text-rose-300" role="alert">{errorMessage(deleteMutation.error)}</p> : null}
+      {repositoryQuery.data ? (
+        <DataFreshness
+          updatedAt={repositoryQuery.data.updatedAt}
+          fetching={repositoryQuery.isFetching}
+          error={repositoryQuery.isError ? repositoryQuery.error : null}
+        />
+      ) : null}
+      <StorageCleanupPanel
+        preview={cleanupPreviewQuery.data}
+        previewPending={cleanupPreviewQuery.isFetching}
+        previewError={cleanupPreviewQuery.error}
+        cleanupPending={cleanupMutation.isPending}
+        cleanupError={cleanupMutation.error}
+        cleanupMessage={cleanupMutation.data?.message}
+        onPreview={() => cleanupPreviewQuery.refetch()}
+        onCleanup={() => setConfirmCleanup(true)}
+      />
       <Panel className="overflow-hidden p-0">
         {repositoryQuery.isPending ? (
           <SectionLoader label="正在读取资料库…" />
-        ) : repositoryQuery.isError ? (
+        ) : repositoryQuery.isError && !repositoryQuery.data ? (
           <ErrorPanel error={repositoryQuery.error} onRetry={() => repositoryQuery.refetch()} />
         ) : items.length === 0 ? (
           <EmptyState icon={<Database />} text="资料库中还没有符合条件的记录" />
@@ -745,6 +800,16 @@ function RepositoryPage() {
         onCancel={() => !deleteMutation.isPending && setConfirmDelete(false)}
         onConfirm={() => !deleteMutation.isPending && deleteMutation.mutate([...selected])}
       />
+      <ConfirmDialog
+        open={confirmCleanup}
+        title={`执行本批存储清理？`}
+        body={cleanupConfirmationBody(cleanupPreviewQuery.data)}
+        confirmLabel={cleanupMutation.isPending ? "清理中…" : "确认执行"}
+        appearance="dark"
+        destructive
+        onCancel={() => !cleanupMutation.isPending && setConfirmCleanup(false)}
+        onConfirm={() => !cleanupMutation.isPending && cleanupMutation.mutate()}
+      />
     </div>
   );
 }
@@ -773,6 +838,157 @@ function RepositoryRow({ item, selected, onToggle }: { item: AdminRepositoryItem
       <td className="tabular-nums">{formatBytes(item.approxBytes)}</td>
       <td className="whitespace-nowrap text-slate-500">{formatDateTime(item.lastAccessedAt)}</td>
     </tr>
+  );
+}
+
+function StorageCleanupPanel({
+  preview,
+  previewPending,
+  previewError,
+  cleanupPending,
+  cleanupError,
+  cleanupMessage,
+  onPreview,
+  onCleanup,
+}: {
+  preview: AdminCleanupPreview | undefined;
+  previewPending: boolean;
+  previewError: unknown;
+  cleanupPending: boolean;
+  cleanupError: unknown;
+  cleanupMessage: string | undefined;
+  onPreview: () => void;
+  onCleanup: () => void;
+}) {
+  return (
+    <Panel className="border-amber-300/10 bg-amber-300/[0.025]">
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-2">
+            <HardDrive className="h-4 w-4 text-amber-300" aria-hidden="true" />
+            <h2 className="text-sm font-semibold text-slate-100">存储压力清理</h2>
+          </div>
+          <p className="mt-2 max-w-3xl text-xs leading-5 text-slate-500">
+            仅在已配置容量且达到预警线时，按低复用、最久未用、最早创建的顺序生成有限批次；不会自动执行。
+          </p>
+        </div>
+        <button
+          type="button"
+          disabled={previewPending || cleanupPending}
+          onClick={onPreview}
+          className="admin-secondary-button"
+        >
+          {previewPending ? <LoaderCircle className="h-4 w-4 animate-spin" aria-hidden="true" /> : <RefreshCw className="h-4 w-4" aria-hidden="true" />}
+          {preview ? "重新预览" : "预览清理"}
+        </button>
+      </div>
+
+      {previewError ? <p className="mt-4 text-sm text-rose-300" role="alert">{errorMessage(previewError)}</p> : null}
+      {cleanupError ? <p className="mt-4 text-sm text-rose-300" role="alert">{errorMessage(cleanupError)}</p> : null}
+      {cleanupMessage ? <p className="mt-4 text-sm text-teal-300" role="status">{cleanupMessage}</p> : null}
+
+      {preview ? (
+        <div className="mt-4 rounded-xl border border-white/8 bg-slate-950/35 p-4">
+          <p className="text-xs leading-5 text-slate-400">{preview.policy}</p>
+          <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-4">
+            <Metric label="当前容量" value={preview.capacityPercentage === null ? "未知" : `${preview.capacityPercentage.toFixed(1)}%`} />
+            <Metric label="预警线" value={preview.thresholdPercentage === null ? "未配置" : `${preview.thresholdPercentage}%`} />
+            <Metric label="目标" value={preview.targetPercentage === null ? "未配置" : `${preview.targetPercentage}%`} />
+            <Metric label="本批候选" value={formatNumber(preview.candidates.length)} />
+          </div>
+
+          {preview.actionNeeded ? (
+            <div className="mt-4 flex flex-wrap items-end justify-between gap-4 border-t border-white/8 pt-4">
+              <div className="min-w-0">
+                <p className="text-sm text-slate-300">
+                  预计移除 {formatBytes(preview.estimatedBytesToRemove)}；候选：
+                  {preview.candidates.slice(0, 5).map((candidate) => candidate.query).join("、")}
+                  {preview.candidates.length > 5 ? ` 等 ${preview.candidates.length} 条` : ""}
+                </p>
+                <p className="mt-1 text-xs text-slate-500">预览不会删除数据；执行时服务端会重新验证管理员身份并持有短期清理锁。</p>
+              </div>
+              <button
+                type="button"
+                disabled={cleanupPending}
+                onClick={onCleanup}
+                className="rounded-xl border border-rose-300/20 bg-rose-300/5 px-4 py-2.5 text-sm font-medium text-rose-300 transition hover:bg-rose-300/10 disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                {cleanupPending ? "清理中…" : "执行本批清理"}
+              </button>
+            </div>
+          ) : (
+            <p className="mt-4 border-t border-white/8 pt-4 text-sm text-slate-400">
+              {cleanupUnavailableMessage(preview)}
+            </p>
+          )}
+
+          {preview.recentRuns.length > 0 ? (
+            <div className="mt-4 border-t border-white/8 pt-4">
+              <p className="text-xs font-medium text-slate-400">最近清理记录</p>
+              <ul className="mt-2 space-y-2 text-xs text-slate-500">
+                {preview.recentRuns.slice(0, 3).map((run) => (
+                  <li key={run.id} className="flex flex-wrap justify-between gap-2">
+                    <span>{cleanupRunLabel(run.result)} · {run.affectedCount} 条{run.message ? ` · ${run.message}` : ""}</span>
+                    <time dateTime={run.createdAt}>{formatDateTime(run.createdAt)}</time>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
+        </div>
+      ) : null}
+    </Panel>
+  );
+}
+
+function cleanupUnavailableMessage(preview: AdminCleanupPreview) {
+  return {
+    capacity_unknown: "数据库总容量或实时体积未知，系统不会显示虚假百分比，也不会执行清理。",
+    policy_incomplete: "请先在 Worker 配置容量、预警线和清理目标。",
+    policy_invalid: "清理目标必须低于预警线，请修正部署配置。",
+    below_threshold: "当前容量低于预警线，无需清理。",
+    repository_empty: "持久资料库为空，无需清理。",
+  }[preview.unavailableReason ?? "repository_empty"];
+}
+
+function cleanupConfirmationBody(preview: AdminCleanupPreview | undefined) {
+  if (!preview || !preview.actionNeeded) {
+    return "当前没有可执行的清理候选。";
+  }
+
+  return `系统将按已显示的保留策略删除本批 ${preview.candidates.length} 条低复用资料，并同步移除对应 KV 加速项。操作会写入审计记录；D1 物理容量统计可能延迟更新。`;
+}
+
+function cleanupRunLabel(result: AdminCleanupPreview["recentRuns"][number]["result"]) {
+  return {
+    success: "已达到目标",
+    partial: "已完成本批",
+    skipped: "未执行",
+    failure: "执行失败",
+  }[result];
+}
+
+function DataFreshness({
+  updatedAt,
+  fetching,
+  error,
+}: {
+  updatedAt: string;
+  fetching: boolean;
+  error: unknown;
+}) {
+  if (error) {
+    return (
+      <p className="mt-2 text-xs text-amber-300" role="status">
+        更新失败，继续显示 {formatDateTime(updatedAt)} 的最近成功数据。
+      </p>
+    );
+  }
+
+  return (
+    <p className="mt-2 text-xs text-slate-500" role="status">
+      {fetching ? "正在更新…" : `更新于 ${formatDateTime(updatedAt)}`}
+    </p>
   );
 }
 
